@@ -162,6 +162,21 @@ uint32_t RaftNode::leader_id() const {
   return leader_id_;
 }
 
+uint64_t RaftNode::lag_entries() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return commit_index_ - storage_.last_applied_index();
+}
+
+uint64_t RaftNode::replication_lag_entries(uint32_t peer_id) const {
+  if (peer_id == local_node_id_) return 0;
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (state_ != RaftState::kLeader) return 0;
+  const auto it = match_index_.find(peer_id);
+  if (it == match_index_.end()) return 0;
+  const uint64_t last_index = log_.LastIndex();
+  return last_index > it->second ? last_index - it->second : 0;
+}
+
 void RaftNode::BecomeFollowerLocked(uint64_t term) {
   current_term_ = term;
   voted_for_ = 0;
@@ -305,6 +320,67 @@ Status RaftNode::Propose(LogEntry entry) {
     return Status::Error(ErrorCode::kInvalidArgument, "not leader");
   }
   return Status::Ok();
+}
+
+bool RaftNode::ConfirmLeadershipQuorum() {
+  uint64_t term;
+  std::vector<cluster::PeerInfo> peers;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ != RaftState::kLeader) return false;
+    term = current_term_;
+    peers = config_.peers;
+  }
+
+  int acks = 1;  // this node's own term is current by construction
+  const int majority = static_cast<int>(peers.size()) / 2 + 1;
+
+  for (const cluster::PeerInfo& peer : peers) {
+    if (peer.node_id == local_node_id_) continue;
+
+    uint64_t prev_log_index;
+    uint64_t prev_log_term;
+    uint64_t leader_commit;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (state_ != RaftState::kLeader || current_term_ != term) return false;
+      const uint64_t next_idx = next_index_[peer.node_id];
+      prev_log_index = next_idx - 1;
+      const LogEntry* prev = prev_log_index == 0 ? nullptr : log_.Get(prev_log_index);
+      prev_log_term = prev != nullptr ? prev->term : 0;
+      leader_commit = commit_index_;
+    }
+
+    // Deliberately empty entries: this round exists to prove quorum
+    // reachability at the current term, not to replicate — a concurrent
+    // heartbeat or Propose() call handles actual replication and updates
+    // next_index_/match_index_ on its own.
+    const AppendEntriesRequest req{.term = term,
+                                    .leader_id = local_node_id_,
+                                    .prev_log_index = prev_log_index,
+                                    .prev_log_term = prev_log_term,
+                                    .leader_commit = leader_commit,
+                                    .entries = {}};
+    std::string body;
+    if (!EncodeAppendEntriesRequest(req, body).ok()) continue;
+    const protocol::ClusterRequest cluster_req{
+        .request_id = 0, .opcode = protocol::ClusterOpcode::kAppendEntries, .body = body};
+    const Result<protocol::ClusterResponse> result = transport_.SendRpc(peer, cluster_req);
+    if (!result.ok()) continue;  // unreachable this round; doesn't count toward the majority
+
+    AppendEntriesResponse resp;
+    if (!DecodeAppendEntriesResponse(result.value().body, resp).ok()) continue;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (resp.term > current_term_) {
+      BecomeFollowerLocked(resp.term);
+      return false;
+    }
+    if (state_ != RaftState::kLeader || current_term_ != term) return false;
+    if (resp.success) ++acks;
+  }
+
+  return acks >= majority;
 }
 
 void RaftNode::AdvanceCommitIndexLocked() {

@@ -28,8 +28,9 @@ protocol::ResponseStatus ToResponseStatus(ErrorCode code) {
 
 }  // namespace
 
-RequestHandler::RequestHandler(persistence::DurableStorage& storage, raft::RaftNode* raft)
-    : storage_(storage), raft_(raft) {}
+RequestHandler::RequestHandler(persistence::DurableStorage& storage, raft::RaftNode* raft,
+                                bool allow_stale_reads)
+    : storage_(storage), raft_(raft), allow_stale_reads_(allow_stale_reads) {}
 
 bool RequestHandler::IsLeader() const {
   return raft_ == nullptr || raft_->state() == raft::RaftState::kLeader;
@@ -71,6 +72,17 @@ protocol::ClientResponse RequestHandler::Handle(const protocol::ClientRequest& r
       break;
     }
     case protocol::Opcode::kGet: {
+      if (raft_ != nullptr && !allow_stale_reads_) {
+        // Linearizable read: a follower has nothing locally guaranteed to
+        // be current, and a leader must first confirm it still holds a
+        // live quorum in its current term (read_index-style) before its
+        // own local state is safe to serve.
+        if (!IsLeader() || !raft_->ConfirmLeadershipQuorum()) {
+          resp.status = protocol::ResponseStatus::kWrongLeader;
+          resp.leader_hint = raft_->leader_id();
+          break;
+        }
+      }
       Result<std::string> result = storage_.Get(req.key);
       if (result.ok()) {
         resp.status = protocol::ResponseStatus::kOk;

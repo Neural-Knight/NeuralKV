@@ -18,13 +18,15 @@ existing WAL. Follows the Raft consensus algorithm (Ongaro & Ousterhout,
   `protocol::ClusterRequest`/`ClusterResponse` (`MessageType::kClusterRequest`
   /`kClusterResponse`, `ClusterOpcode::kRequestVote`/`kAppendEntries`) —
   the same TCP port and framing every other cluster RPC already uses.
-- `cluster::ClusterTransport` — dials and caches one outbound connection
-  per peer; `RaftNode` uses it to send RequestVote/AppendEntries and reads
-  the replies synchronously.
+- `cluster::ClusterTransport` — dials a fresh connection per RPC and
+  closes it immediately after reading the response (no per-peer cache —
+  see Known limitations); `RaftNode` uses it to send RequestVote/
+  AppendEntries and reads the replies synchronously.
 - `RequestHandler` — routes client SET/DELETE through
   `RaftNode::Propose()` when a `RaftNode` is present, rejects them with
-  `kWrongLeader` + the current leader's id otherwise; GET always reads
-  local storage directly.
+  `kWrongLeader` + the current leader's id otherwise. GET is linearizable
+  by default (see Linearizable reads below) unless `--allow-stale-reads`
+  is set, in which case it always reads local storage directly.
 
 ## Election
 
@@ -100,23 +102,88 @@ replayed the WAL into the KV store separately — `last_applied_index()`
 tracks how far that got, and the Raft apply loop picks up from there
 without redoing already-applied work.
 
+## Linearizable reads
+
+GET is linearizable by default. A follower always rejects with
+`kWrongLeader` (there's nothing it can serve locally with a currency
+guarantee); a leader confirms it still holds a live quorum before
+reading. That confirmation is `RaftNode::ConfirmLeadershipQuorum()`, a
+simplified `read_index` (§6.4 of the paper): the leader sends one round
+of empty `AppendEntries` to every peer at its current term and requires a
+majority (including itself) to succeed before trusting its own local
+state. A `true` result means no other leader has been elected since the
+round started, so every entry a client could have observed as committed
+is already reflected locally — this node's own commit/apply path is
+synchronous, so `last_applied` never lags `commit_index` by the time a
+write's `Propose()` call returns.
+
+This is deliberately not the full `read_index` optimization (batching
+concurrent reads behind one confirmation round, or tracking "already
+confirmed this term" to skip the round entirely between heartbeats) —
+every GET pays one extra round trip to each peer. Correct, not fast;
+worth revisiting if read latency becomes the bottleneck.
+
+`--allow-stale-reads` on `nkv-server` reverts to the pre-M9 behavior:
+every GET, on any node, reads local storage immediately with no quorum
+check — possibly stale on a lagging follower, but with no extra RPC cost
+on the leader either.
+
+## Metrics
+
+`RaftNode` exposes two accessors, both computed from state it already
+tracks — no separate bookkeeping, no HTTP endpoint yet:
+
+- `lag_entries()` — `commit_index() - last_applied()` on any node. Settles
+  back to 0 immediately after every commit, since apply runs synchronously
+  with whatever just advanced `commit_index`; a sustained non-zero value
+  would mean the apply loop itself is stuck, not just behind.
+- `replication_lag_entries(peer_id)` — leader-only: that peer's
+  `matchIndex` subtracted from the leader's own last log index. 0 on a
+  follower/candidate (no `matchIndex` map to read) and 0 for the local
+  node id.
+
 ## Known limitations
 
 - **No snapshots.** A restarted or far-behind node replays/receives the
-  *entire* log; there's no InstallSnapshot RPC to compact it. Fine at this
-  scale, a real bottleneck at any real one.
-- **No linearizable reads.** GET always reads local storage immediately,
-  even on a follower lagging the leader — see cluster-config.md. A
-  `read_index`-style mechanism would fix this without full replication of
-  reads.
+  *entire* log; there's no InstallSnapshot RPC to compact it. Deferred
+  from this pass — see "Snapshots: deferred" below.
 - **Propose() blocks the calling thread**, including epoll's single event
   loop thread when running in `--io epoll` mode — the same tradeoff
   DurableStorage's fsync already introduced for B5, just with a Raft
-  round trip layered on top of the fsync it still does.
-- **No RPC timeouts in ClusterTransport.** A hung (not dead) peer's cached
-  connection can stall a replication round until the OS's own TCP-level
-  failure detection kicks in. A cleanly killed process's socket closes
+  round trip layered on top of the fsync it still does. The new
+  `ConfirmLeadershipQuorum()` read path carries the identical tradeoff
+  for GET.
+- **No connect/read timeouts in ClusterTransport.** Each RPC pays a fresh
+  TCP handshake (no per-peer connection cache — see Components), and a
+  hung (not dead) peer can still stall a replication round on the
+  `connect()`/`read()` calls until the OS's own TCP-level failure
+  detection kicks in. A cleanly killed process's socket closes
   immediately, so this hasn't been an issue in testing, but it's not a
   bound guarantee.
 - **Fixed 3-way majority arithmetic** — no dynamic membership changes; the
   peer list a node starts with is the peer list it runs with.
+- **No systematic fault injection.** `src/testing/fault_injection.h`
+  (`FaultInjectingTransport`) is a small test-only stub — drop outbound
+  RPCs to a peer, or simulate a two-node partition by dropping both
+  directions — used by one in-process test to confirm replication
+  resumes once a fault heals. It has no scripted fault schedules, no
+  latency injection, no message reordering; a real harness for that is
+  its own future pass.
+
+## Snapshots: deferred
+
+No `InstallSnapshot` RPC and no on-disk snapshot format exist yet. A
+restarted or far-behind node always recovers by reading the *entire* WAL
+(`DurableStorage`'s own recovery scan) and then, if further behind than
+that, receiving the rest of the log via ordinary `AppendEntries` batches
+from the leader — `raft_catchup_test.cpp` exercises exactly this path for
+100 entries and it's fast at that scale. The gap only matters once a
+log's on-disk size or a follower's catch-up distance gets large enough
+that full-log replay becomes the dominant cost. Planned trigger
+thresholds for the next pass: snapshot when the log exceeds ~10,000
+entries or the WAL file exceeds ~64 MB, whichever comes first, mirroring
+`Log::TruncateFrom`'s existing full-file-rewrite approach (`WalWriter::
+RewriteAll`) but writing a compacted `ShardedKV` state dump instead of a
+truncated log. A lagging follower whose required `prev_log_index` no
+longer exists in the leader's (now-compacted) log would receive that
+snapshot instead of a full replay.

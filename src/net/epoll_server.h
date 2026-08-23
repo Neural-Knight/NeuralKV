@@ -29,7 +29,7 @@ namespace neuralkv::net {
 class EpollServer {
  public:
   EpollServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
-              raft::RaftNode* raft = nullptr);
+              raft::RaftNode* raft = nullptr, bool allow_stale_reads = false);
 
   // Runs the event loop until Stop() is called. Returns Ok() on a clean
   // shutdown, or the error that ended the loop early.

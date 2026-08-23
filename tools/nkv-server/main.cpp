@@ -41,6 +41,9 @@ void PrintUsage() {
                "                         default: blocking if --workers 1, else threadpool\n"
                "  --node-id <n>          This node's cluster id (required with --cluster-config)\n"
                "  --cluster-config <path>  Cluster membership file; enables Raft replication\n"
+               "  --allow-stale-reads    Serve GET from local storage unconditionally, on any\n"
+               "                         node, instead of the default linearizable read_index\n"
+               "                         check (ignored without --cluster-config)\n"
                "  --help                 Show this message\n";
 }
 
@@ -70,6 +73,7 @@ int main(int argc, char** argv) {
   std::string io_mode;
   std::string cluster_config_path;
   uint32_t node_id_flag = 0;
+  bool allow_stale_reads = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string_view arg = argv[i];
@@ -91,6 +95,8 @@ int main(int argc, char** argv) {
       node_id_flag = static_cast<uint32_t>(std::stoul(std::string(NextArg(argc, argv, i, arg))));
     } else if (arg == "--cluster-config") {
       cluster_config_path = std::string(NextArg(argc, argv, i, arg));
+    } else if (arg == "--allow-stale-reads") {
+      allow_stale_reads = true;
     } else {
       std::cerr << "unknown argument: " << arg << "\n";
       PrintUsage();
@@ -168,7 +174,7 @@ int main(int argc, char** argv) {
 
   neuralkv::Status status = neuralkv::Status::Ok();
   if (io_mode == "blocking") {
-    neuralkv::BlockingServer server(config.host, config.port, storage, raft_ptr);
+    neuralkv::BlockingServer server(config.host, config.port, storage, raft_ptr, allow_stale_reads);
     g_stop_callback = [&server, raft_ptr] {
       if (raft_ptr != nullptr) raft_ptr->Stop();
       server.Stop();
@@ -177,7 +183,7 @@ int main(int argc, char** argv) {
     status = server.Run();
   } else if (io_mode == "threadpool") {
     neuralkv::ThreadPoolServer server(config.host, config.port, storage,
-                                       static_cast<std::size_t>(workers), raft_ptr);
+                                       static_cast<std::size_t>(workers), raft_ptr, allow_stale_reads);
     g_stop_callback = [&server, raft_ptr] {
       if (raft_ptr != nullptr) raft_ptr->Stop();
       server.Stop();
@@ -186,7 +192,7 @@ int main(int argc, char** argv) {
     status = server.Run();
   } else {
 #ifdef NEURALKV_LINUX
-    neuralkv::net::EpollServer server(config.host, config.port, storage, raft_ptr);
+    neuralkv::net::EpollServer server(config.host, config.port, storage, raft_ptr, allow_stale_reads);
     g_stop_callback = [&server, raft_ptr] {
       if (raft_ptr != nullptr) raft_ptr->Stop();
       server.Stop();

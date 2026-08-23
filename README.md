@@ -68,15 +68,26 @@ lower throughput and higher tail latency than a single node — see
 [docs/benchmarks/results/b6-raft-2026-08-23.txt](docs/benchmarks/results/b6-raft-2026-08-23.txt)
 for real numbers.
 
+B9 measures failover time instead of throughput: `SIGKILL` a running
+cluster's leader and time how long until a surviving node accepts a
+write. Median 289ms across 3 runs on Linux/Docker, comfortably inside
+Raft's randomized 250–400ms election timeout — see
+[docs/benchmarks/results/b9-failover-2026-08-24.txt](docs/benchmarks/results/b9-failover-2026-08-24.txt).
+
 ## Cluster (Raft-replicated)
 
 `./scripts/run_cluster.sh` starts a 3-node cluster on localhost. Raft
 elects the leader; writes against any other node come back as
 `WRONG_LEADER` with the current leader's node id, and `nkv-client
---cluster-config <path>` follows that redirect automatically. Killing the
-leader triggers a new election — see [docs/raft-design.md](docs/raft-design.md)
-for how election, replication, and commit/apply work, and
-[docs/cluster-config.md](docs/cluster-config.md) for the config file
+--cluster-config <path>` follows that redirect automatically. Reads are
+linearizable by default too: a follower's GET also comes back
+`WRONG_LEADER` (nothing local to serve with a currency guarantee), and
+the leader confirms it still holds a live quorum before answering —
+`--allow-stale-reads` opts back into serving GET from local storage
+unconditionally, at the cost of the currency guarantee. Killing the
+leader triggers a new election. See [docs/raft-design.md](docs/raft-design.md)
+for how election, replication, commit/apply, and linearizable reads work,
+and [docs/cluster-config.md](docs/cluster-config.md) for the config file
 format and client redirect behavior.
 
 ## Project Layout

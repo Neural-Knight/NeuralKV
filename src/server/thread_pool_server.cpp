@@ -12,8 +12,11 @@ namespace neuralkv {
 
 ThreadPoolServer::ThreadPoolServer(std::string host, uint16_t port,
                                     persistence::DurableStorage& storage, std::size_t num_workers,
-                                    raft::RaftNode* raft)
-    : host_(std::move(host)), port_(port), handler_(storage, raft), pool_(num_workers) {
+                                    raft::RaftNode* raft, bool allow_stale_reads)
+    : host_(std::move(host)),
+      port_(port),
+      handler_(storage, raft, allow_stale_reads),
+      pool_(num_workers) {
   Result<int> listen_result = net::TcpListen(host_, port_);
   if (!listen_result.ok()) {
     bind_status_ = listen_result.status();

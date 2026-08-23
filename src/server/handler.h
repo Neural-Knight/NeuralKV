@@ -12,16 +12,21 @@ namespace neuralkv {
 // beyond the references passed in.
 //
 // Without a RaftNode, the handler behaves exactly as a single node always
-// has: every write applies directly to storage. With one, only the current
-// Raft leader accepts SET/DELETE — a follower (or a leader that loses the
-// role mid-write) rejects with kWrongLeader and the current leader's node
-// id. GET is always served from local storage regardless of role — a
-// follower's log can lag the leader's until it catches up, so this is a
-// stale read on a follower, not a redirect; linearizable reads are future
-// work.
+// has: every write applies directly to storage, and GET reads local
+// storage directly. With a RaftNode, only the current leader accepts
+// SET/DELETE — a follower (or a leader that loses the role mid-write)
+// rejects with kWrongLeader and the current leader's node id. GET is
+// linearizable by default: a follower always rejects with kWrongLeader
+// (there's nothing to read locally that's guaranteed current), and a
+// leader confirms it still holds a live quorum (RaftNode::
+// ConfirmLeadershipQuorum, a read_index-style check) before reading —
+// itself rejecting with kWrongLeader if that check fails. Pass
+// allow_stale_reads=true to skip both checks and read local storage
+// unconditionally, on any node, for the old possibly-stale behavior.
 class RequestHandler {
  public:
-  explicit RequestHandler(persistence::DurableStorage& storage, raft::RaftNode* raft = nullptr);
+  explicit RequestHandler(persistence::DurableStorage& storage, raft::RaftNode* raft = nullptr,
+                           bool allow_stale_reads = false);
 
   protocol::ClientResponse Handle(const protocol::ClientRequest& req);
 
@@ -34,6 +39,7 @@ class RequestHandler {
 
   persistence::DurableStorage& storage_;
   raft::RaftNode* raft_;
+  bool allow_stale_reads_;
 };
 
 }  // namespace neuralkv

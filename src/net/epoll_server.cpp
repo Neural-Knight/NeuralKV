@@ -33,8 +33,8 @@ uint32_t WantedEvents(const Connection& conn) {
 }  // namespace
 
 EpollServer::EpollServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
-                          raft::RaftNode* raft)
-    : host_(std::move(host)), port_(port), handler_(storage, raft) {
+                          raft::RaftNode* raft, bool allow_stale_reads)
+    : host_(std::move(host)), port_(port), handler_(storage, raft, allow_stale_reads) {
   Result<int> listen_result = TcpListen(host_, port_);
   if (!listen_result.ok()) {
     bind_status_ = listen_result.status();

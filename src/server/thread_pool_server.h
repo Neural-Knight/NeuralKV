@@ -20,7 +20,8 @@ namespace neuralkv {
 class ThreadPoolServer {
  public:
   ThreadPoolServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
-                    std::size_t num_workers, raft::RaftNode* raft = nullptr);
+                    std::size_t num_workers, raft::RaftNode* raft = nullptr,
+                    bool allow_stale_reads = false);
 
   // Accepts connections until Stop() is called (or a signal interrupts the
   // blocking accept()). Returns Ok() on a clean shutdown, or the error that

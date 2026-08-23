@@ -30,6 +30,9 @@ add_executable(neuralkv_integration_tests
   integration/crash_recovery_test.cpp
   integration/cluster_transport_test.cpp
   integration/raft_cluster_test.cpp
+  integration/raft_stale_leader_test.cpp
+  integration/raft_linearizable_read_test.cpp
+  integration/raft_catchup_test.cpp
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -57,6 +60,7 @@ gtest_discover_tests(neuralkv_integration_tests)
 
 add_executable(neuralkv_raft_tests
   raft/raft_figure8_test.cpp
+  raft/raft_fault_injection_test.cpp
 )
 
 target_link_libraries(neuralkv_raft_tests PRIVATE

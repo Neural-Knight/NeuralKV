@@ -51,10 +51,19 @@ storage regardless of any notion of leadership.
   undo. A write can also come back `kWrongLeader` if this node *was* the
   leader when the request arrived but lost the role before the write
   committed; the client should just retry.
-- **GET**: always served from local storage, on every node, leader or
-  follower. A follower's log can lag the leader's by however long
-  replication takes to catch up — a stale read, not a redirect.
-  Redirecting GET to the leader for a linearizable read is future work.
+- **GET**: linearizable by default. A follower rejects every GET with
+  `kWrongLeader` + `leader_hint` — there's nothing it can serve locally
+  with a currency guarantee, so it doesn't try. A leader confirms it
+  still holds a live quorum (one round of empty `AppendEntries` to every
+  peer, majority required — see raft-design.md's read_index section)
+  before reading; if that check fails (this node just lost leadership,
+  or can't reach a majority right now) it also rejects with
+  `kWrongLeader`. `nkv-client --cluster-config` follows a GET's
+  `kWrongLeader` the same way it follows a write's. Pass
+  `--allow-stale-reads` to `nkv-server` to skip both checks: every GET,
+  on any node, reads local storage immediately, possibly stale on a
+  lagging follower — the old (pre-M9) behavior, useful when read latency
+  matters more than a currency guarantee.
 
 ## Client redirect
 
@@ -83,13 +92,14 @@ Cluster RPCs today: `ClusterOpcode::kPing` (liveness — gets back
 `ResponseStatus::kOk` and body `"pong"`), and Raft's own
 `kRequestVote`/`kAppendEntries`, whose bodies are encoded/decoded by
 `raft::rpc_codec` and dispatched to the node's `RaftNode`.
-`ClusterTransport` dials and caches one connection per peer and reuses it
-across calls, closing and discarding it on any malformed response or I/O
-error so the next call reconnects rather than reusing a socket left in a
-bad state.
+`ClusterTransport` dials a fresh connection per RPC and closes it
+immediately after the response — deliberately not cached, since Raft's
+continuous heartbeat traffic over a held-open connection would otherwise
+monopolize a receiving node's connection-serving capacity under the
+blocking/thread-pool server modes.
 
 ## Out of scope here
 
 Dynamic membership changes and TLS are deliberately not part of this
 config format. See raft-design.md for what's out of scope in Raft itself
-(snapshots, linearizable reads).
+(snapshots, systematic fault injection).

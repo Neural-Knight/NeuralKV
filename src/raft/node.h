@@ -54,11 +54,32 @@ class RaftNode {
   // failure.
   Status Propose(LogEntry entry);
 
+  // read_index-style linearizable-read check: sends one round of empty
+  // AppendEntries to every peer and returns true only if a majority
+  // (including this node) confirms the same current term. A true result
+  // means no other leader has been elected since this round started, so
+  // this node's local state already reflects every entry any client could
+  // have observed as committed. Returns false (and may step down) if this
+  // node isn't leader, loses leadership mid-check, or can't reach a
+  // majority — callers should treat false as "not safe to read here".
+  bool ConfirmLeadershipQuorum();
+
   RaftState state() const;
   uint64_t current_term() const;
   uint64_t commit_index() const;
   uint64_t last_applied() const;
   uint32_t leader_id() const;  // 0 if unknown
+
+  // commit_index() - last_applied(): entries this node has committed but
+  // not yet applied to storage. Non-zero only briefly — apply runs
+  // synchronously with whatever just advanced commit_index.
+  uint64_t lag_entries() const;
+
+  // Leader's last log index minus peer_id's matchIndex — how far behind
+  // that follower's replicated log is, from this node's point of view.
+  // 0 if peer_id is this node itself, or if this node isn't leader (a
+  // follower/candidate has no matchIndex tracking for anyone).
+  uint64_t replication_lag_entries(uint32_t peer_id) const;
 
   RequestVoteResponse HandleRequestVote(const RequestVoteRequest& req);
   AppendEntriesResponse HandleAppendEntries(const AppendEntriesRequest& req);

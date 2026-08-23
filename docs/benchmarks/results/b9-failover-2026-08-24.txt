@@ -1,0 +1,51 @@
+B9: failover recovery time on a 3-node Raft cluster.
+Docker (Ubuntu 24.04 container, Linux target build). Idle cluster (no
+write load running) — each run starts a fresh 3-node cluster, finds the
+elected leader, SIGKILLs it, and measures wall-clock time from the kill
+to the first SET that a surviving node accepts. Killing one of three
+nodes leaves exactly a majority (2 of 3), so each run uses a fresh
+cluster rather than reusing one across iterations.
+
+command (build): cmake -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+                 && cmake --build build-linux
+date: 2026-08-24
+
+Per-run procedure, repeated 3 times with a fresh 3-node cluster each time:
+  1. start nkv-server on 127.0.0.1:18801/18802/18803, node ids 1/2/3,
+     generated cluster.conf naming all three peers, isolated --data-dir
+     per node.
+  2. probe all three with `nkv-client set leader-probe x` in a loop until
+     one returns OK — that's the leader.
+  3. record start_ns, then `kill -9` the leader's pid.
+  4. probe the two survivors with `nkv-client set after-failover ok` in a
+     10ms-interval loop until one returns OK — record end_ns.
+  5. elapsed = end_ns - start_ns.
+
+results:
+  run 1: 382ms (old leader node 2, port 18802; new leader port 18803)
+  run 2: 275ms (old leader node 1, port 18801; new leader port 18802)
+  run 3: 289ms (old leader node 2, port 18802; new leader port 18801)
+
+median: 289ms
+all runs: 382ms, 275ms, 289ms
+
+analysis:
+All three runs land well inside the randomized election timeout window
+(250-400ms, see raft/node.cpp kElectionTimeoutMin/Max) plus the ~10ms
+polling granularity and connect/fork overhead this script's own
+nkv-client probe loop adds on top of Raft's actual election. That's
+consistent with what should happen: a killed leader's socket closes
+immediately (no TCP-level detection delay like a hung-but-alive process
+would incur — see raft-design.md's "no RPC timeouts" limitation), so the
+dominant cost is simply waiting out a follower's own randomized election
+timer before it can start a new election and win it. No run required a
+second election round (a split vote would show up as roughly double one
+timeout window); three nodes with independently rolled timeouts made that
+unlikely, as expected.
+
+Not measured here: failover time under concurrent write load (a
+Propose() blocked mid-flight on the old leader errors out to its caller
+rather than being replayed anywhere — the client is expected to retry,
+which this benchmark doesn't model), and recovery/catch-up time for the
+killed node if it later rejoins (see raft_catchup_test.cpp for a
+correctness check of that path, though not a timed one).

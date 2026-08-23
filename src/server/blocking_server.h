@@ -17,7 +17,7 @@ namespace neuralkv {
 class BlockingServer {
  public:
   BlockingServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
-                 raft::RaftNode* raft = nullptr);
+                 raft::RaftNode* raft = nullptr, bool allow_stale_reads = false);
 
   // Serves connections until Stop() is called from another thread (or a
   // signal handler interrupts the blocking accept()). Returns Ok() on a

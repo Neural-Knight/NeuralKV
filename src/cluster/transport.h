@@ -30,7 +30,7 @@ namespace neuralkv::cluster {
 class ClusterTransport {
  public:
   explicit ClusterTransport(uint32_t local_node_id);
-  ~ClusterTransport();
+  virtual ~ClusterTransport();
 
   ClusterTransport(const ClusterTransport&) = delete;
   ClusterTransport& operator=(const ClusterTransport&) = delete;
@@ -40,8 +40,11 @@ class ClusterTransport {
 
   // Dials a fresh connection to peer, sends req, blocks for its response,
   // and closes the connection before returning — success or failure.
-  Result<protocol::ClusterResponse> SendRpc(const PeerInfo& peer,
-                                             const protocol::ClusterRequest& req);
+  // Virtual solely so tests can wrap it with fault injection (see
+  // src/testing/fault_injection.h); RaftNode always talks to a plain
+  // ClusterTransport in production.
+  virtual Result<protocol::ClusterResponse> SendRpc(const PeerInfo& peer,
+                                                      const protocol::ClusterRequest& req);
 
   void CloseAll();
 

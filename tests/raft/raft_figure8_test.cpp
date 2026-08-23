@@ -242,6 +242,82 @@ TEST(RaftFigure8Test, SurvivesLeaderCrashWithoutLosingCommittedEntries) {
                   .ok());
 }
 
+// --- Replication lag metrics ------------------------------------------
+
+TEST(RaftFigure8Test, ReplicationLagDropsToZeroAfterCatchUp) {
+  TestCluster cluster(ThreeNodePorts());
+  const int leader = cluster.WaitForLeader(std::chrono::milliseconds(2000));
+  ASSERT_GE(leader, 0);
+
+  for (int i = 0; i < 5; ++i) {
+    ASSERT_TRUE(cluster
+                    .ProposeOn(static_cast<std::size_t>(leader),
+                               LogEntry{.term = 0,
+                                        .index = 0,
+                                        .op = persistence::WalOp::kSet,
+                                        .key = "k" + std::to_string(i),
+                                        .value = "v" + std::to_string(i)})
+                    .ok());
+  }
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+  bool all_caught_up = false;
+  while (std::chrono::steady_clock::now() < deadline) {
+    all_caught_up = true;
+    for (std::size_t i = 0; i < cluster.size(); ++i) {
+      if (static_cast<int>(i) == leader) continue;
+      if (cluster.Raft(static_cast<std::size_t>(leader))
+              .replication_lag_entries(static_cast<uint32_t>(i) + 1) != 0) {
+        all_caught_up = false;
+      }
+    }
+    if (all_caught_up) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  EXPECT_TRUE(all_caught_up) << "follower replication lag never dropped to 0";
+
+  // lag_entries() (commit_index - last_applied) settles to 0 on every
+  // node once its own apply loop has caught up to what it's committed.
+  for (std::size_t i = 0; i < cluster.size(); ++i) {
+    EXPECT_EQ(cluster.Raft(i).lag_entries(), 0u) << "node " << i << " has unapplied committed entries";
+  }
+}
+
+// --- Stale leader step-down: a higher term seen in either RPC handler
+// demotes a leader to follower immediately, regardless of role. ----------
+
+TEST(RaftFigure8Test, LeaderStepsDownOnHigherTermAppendEntries) {
+  TestCluster cluster(ThreeNodePorts());
+  const int leader = cluster.WaitForLeader(std::chrono::milliseconds(2000));
+  ASSERT_GE(leader, 0);
+
+  const uint64_t higher_term = cluster.Raft(static_cast<std::size_t>(leader)).current_term() + 10;
+  const AppendEntriesResponse resp = cluster.Raft(static_cast<std::size_t>(leader))
+                                          .HandleAppendEntries(AppendEntriesRequest{
+                                              .term = higher_term,
+                                              .leader_id = 99,
+                                              .prev_log_index = 0,
+                                              .prev_log_term = 0,
+                                              .leader_commit = 0,
+                                              .entries = {}});
+  EXPECT_TRUE(resp.success);
+  EXPECT_EQ(cluster.Raft(static_cast<std::size_t>(leader)).state(), RaftState::kFollower);
+  EXPECT_EQ(cluster.Raft(static_cast<std::size_t>(leader)).current_term(), higher_term);
+}
+
+TEST(RaftFigure8Test, LeaderStepsDownOnHigherTermRequestVote) {
+  TestCluster cluster(ThreeNodePorts());
+  const int leader = cluster.WaitForLeader(std::chrono::milliseconds(2000));
+  ASSERT_GE(leader, 0);
+
+  const uint64_t higher_term = cluster.Raft(static_cast<std::size_t>(leader)).current_term() + 10;
+  cluster.Raft(static_cast<std::size_t>(leader))
+      .HandleRequestVote(RequestVoteRequest{
+          .term = higher_term, .candidate_id = 99, .last_log_index = 0, .last_log_term = 0});
+  EXPECT_EQ(cluster.Raft(static_cast<std::size_t>(leader)).state(), RaftState::kFollower);
+  EXPECT_EQ(cluster.Raft(static_cast<std::size_t>(leader)).current_term(), higher_term);
+}
+
 // --- Scenarios 4 and 5: driven directly against one RaftNode's RPC
 // handlers, with no live cluster or timers needed. ------------------------
 
