@@ -1,0 +1,12 @@
+services:
+  build:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+    command: >
+      bash -c "cmake -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release &&
+               cmake --build build-linux &&
+               ctest --test-dir build-linux --output-on-failure"
