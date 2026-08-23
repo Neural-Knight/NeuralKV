@@ -40,13 +40,18 @@ neuralkv_set_warnings(neuralkv_protocol)
 
 add_library(neuralkv_net
   net/socket_utils.cpp
+  net/connection.cpp
 )
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_sources(neuralkv_net PRIVATE net/epoll_server.cpp)
+endif()
 
 target_include_directories(neuralkv_net PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(neuralkv_net PUBLIC neuralkv_common)
+target_link_libraries(neuralkv_net PUBLIC neuralkv_common neuralkv_protocol)
 
 target_compile_features(neuralkv_net PUBLIC cxx_std_20)
 
@@ -87,3 +92,11 @@ target_link_libraries(neuralkv_server PUBLIC
 target_compile_features(neuralkv_server PUBLIC cxx_std_20)
 
 neuralkv_set_warnings(neuralkv_server)
+
+# Connection and EpollServer (in neuralkv_net) dispatch through
+# RequestHandler (in neuralkv_server), while the blocking/thread-pool
+# servers (in neuralkv_server) open sockets through neuralkv_net. PRIVATE
+# here still puts libneuralkv_server on the final link line wherever
+# neuralkv_net is needed, without exposing it as part of neuralkv_net's
+# own public interface to unrelated consumers (e.g. nkv-client).
+target_link_libraries(neuralkv_net PRIVATE neuralkv_server)

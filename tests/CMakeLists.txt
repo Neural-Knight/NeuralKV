@@ -23,6 +23,10 @@ add_executable(neuralkv_integration_tests
   integration/concurrent_server_test.cpp
 )
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_sources(neuralkv_integration_tests PRIVATE integration/epoll_server_test.cpp)
+endif()
+
 target_link_libraries(neuralkv_integration_tests PRIVATE
   neuralkv_common
   neuralkv_protocol

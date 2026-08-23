@@ -9,6 +9,7 @@
 
 #include "common/config.h"
 #include "common/status.h"
+#include "net/epoll_server.h"
 #include "server/blocking_server.h"
 #include "server/thread_pool_server.h"
 #include "storage/sharded_kv.h"
@@ -29,8 +30,9 @@ void PrintUsage() {
                "Options:\n"
                "  --host <addr>    Listen address (default: 127.0.0.1)\n"
                "  --port <n>       Listen port (default: 7400; 0 for ephemeral)\n"
-               "  --workers <n>    Worker threads (default: 1 = single-threaded\n"
-               "                   blocking server; >1 uses a thread-pool server)\n"
+               "  --workers <n>    Worker threads (default: 1)\n"
+               "  --io <mode>      blocking | threadpool | epoll (Linux only)\n"
+               "                   default: blocking if --workers 1, else threadpool\n"
                "  --help           Show this message\n";
 }
 
@@ -56,6 +58,8 @@ void InstallShutdownHandlers() {
 int main(int argc, char** argv) {
   neuralkv::NodeConfig config;
   int workers = 1;
+  [[maybe_unused]] bool workers_explicit = false;
+  std::string io_mode;
 
   for (int i = 1; i < argc; ++i) {
     std::string_view arg = argv[i];
@@ -68,6 +72,9 @@ int main(int argc, char** argv) {
       config.port = static_cast<uint16_t>(std::stoi(std::string(NextArg(argc, argv, i, arg))));
     } else if (arg == "--workers") {
       workers = std::stoi(std::string(NextArg(argc, argv, i, arg)));
+      workers_explicit = true;
+    } else if (arg == "--io") {
+      io_mode = std::string(NextArg(argc, argv, i, arg));
     } else {
       std::cerr << "unknown argument: " << arg << "\n";
       PrintUsage();
@@ -75,7 +82,24 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (workers < 1) {
+  if (io_mode.empty()) {
+    io_mode = (workers > 1) ? "threadpool" : "blocking";
+  }
+  if (io_mode != "blocking" && io_mode != "threadpool" && io_mode != "epoll") {
+    std::cerr << "unknown --io mode: " << io_mode << "\n";
+    return EXIT_FAILURE;
+  }
+
+  if (io_mode == "epoll") {
+#ifndef NEURALKV_LINUX
+    std::cerr << "--io epoll is only supported on Linux\n";
+    return EXIT_FAILURE;
+#else
+    if (workers_explicit) {
+      std::cerr << "warning: --workers is ignored with --io epoll (single-threaded event loop)\n";
+    }
+#endif
+  } else if (workers < 1) {
     std::cerr << "--workers must be >= 1\n";
     return EXIT_FAILURE;
   }
@@ -84,17 +108,24 @@ int main(int argc, char** argv) {
   InstallShutdownHandlers();
 
   neuralkv::Status status = neuralkv::Status::Ok();
-  if (workers == 1) {
+  if (io_mode == "blocking") {
     neuralkv::BlockingServer server(config.host, config.port, kv);
     g_stop_callback = [&server] { server.Stop(); };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
-  } else {
+  } else if (io_mode == "threadpool") {
     neuralkv::ThreadPoolServer server(config.host, config.port, kv,
                                        static_cast<std::size_t>(workers));
     g_stop_callback = [&server] { server.Stop(); };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
+  } else {
+#ifdef NEURALKV_LINUX
+    neuralkv::net::EpollServer server(config.host, config.port, kv);
+    g_stop_callback = [&server] { server.Stop(); };
+    std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
+    status = server.Run();
+#endif
   }
 
   if (!status.ok()) {

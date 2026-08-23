@@ -47,14 +47,21 @@ run the same nkv-bench command against each: `nkv-server --port 7400`
 (single-threaded) vs. `nkv-server --port 7400 --workers 8` (thread pool),
 then diff the throughput and percentiles nkv-bench prints for each run.
 
+B4 (epoll event loop) is Linux-only: `nkv-server --io epoll --port 7400`
+under Docker or on a Linux host. Compare it against B2 the same way — same
+nkv-bench command, `--workers 8` vs. `--io epoll` — and diff the printed
+throughput and percentiles. No numbers are published here; run it and read
+what your machine reports.
+
 ## Project Layout
 
 ```
 src/common/       core types shared across the project (Status, Result<T>, NodeConfig)
 src/storage/      sharded, thread-safe in-memory key-value store (ShardedKV)
 src/protocol/     binary wire protocol: frame codec, request/response types
-src/net/          POSIX socket RAII and blocking read/write helpers
-src/server/       request handler and single-threaded blocking TCP server
+src/net/          POSIX socket RAII, blocking I/O helpers, connection state
+                  machine, epoll event loop (Linux only)
+src/server/       request handler, blocking and thread-pool TCP servers
 tests/unit/       GoogleTest unit tests
 tests/integration/ end-to-end tests against a forked nkv-server subprocess
 benchmarks/       Google Benchmark micro-benchmarks

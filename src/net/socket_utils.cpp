@@ -3,8 +3,10 @@
 #include <cerrno>
 #include <cstring>
 
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -29,6 +31,11 @@ int Fd::release() noexcept {
   const int fd = fd_;
   fd_ = -1;
   return fd;
+}
+
+void Fd::reset() noexcept {
+  CloseQuietly(fd_);
+  fd_ = -1;
 }
 
 void CloseQuietly(int fd) {
@@ -128,6 +135,21 @@ Result<int> TcpConnect(const std::string& host, uint16_t port) {
   }
 
   return conn_fd.release();
+}
+
+uint16_t GetBoundPort(int fd, uint16_t fallback) {
+  struct sockaddr_storage addr {};
+  socklen_t addr_len = sizeof(addr);
+  if (::getsockname(fd, reinterpret_cast<struct sockaddr*>(&addr), &addr_len) != 0) {
+    return fallback;
+  }
+  if (addr.ss_family == AF_INET) {
+    return ntohs(reinterpret_cast<struct sockaddr_in*>(&addr)->sin_port);
+  }
+  if (addr.ss_family == AF_INET6) {
+    return ntohs(reinterpret_cast<struct sockaddr_in6*>(&addr)->sin6_port);
+  }
+  return fallback;
 }
 
 Status ReadFull(int fd, uint8_t* buf, std::size_t len) {
