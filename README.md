@@ -37,15 +37,25 @@ inside an Ubuntu container:
 ./scripts/docker_build.sh
 ```
 
+## Benchmarking
+
+Start a server, then point nkv-bench at it: `nkv-server --port 7400 &` then
+`nkv-bench --bench --host 127.0.0.1 --port 7400 --duration 30 --clients 16`.
+
 ## Project Layout
 
 ```
 src/common/       core types shared across the project (Status, Result<T>, NodeConfig)
 src/storage/      sharded, thread-safe in-memory key-value store (ShardedKV)
 src/protocol/     binary wire protocol: frame codec, request/response types
+src/net/          POSIX socket RAII and blocking read/write helpers
+src/server/       request handler and single-threaded blocking TCP server
 tests/unit/       GoogleTest unit tests
+tests/integration/ end-to-end tests against a forked nkv-server subprocess
 benchmarks/       Google Benchmark micro-benchmarks
-tools/nkv-bench/  load-generator CLI (skeleton for now)
+tools/nkv-server/ standalone server binary
+tools/nkv-client/ one-shot CLI client (set/get/delete)
+tools/nkv-bench/  load generator and latency benchmark
 docker/           Linux container build definition
 scripts/          helper scripts (Docker build/test)
 docs/             design docs and benchmark methodology

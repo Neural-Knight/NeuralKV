@@ -142,6 +142,30 @@ TEST(ProtocolCodecTest, HandCraftedFrameDecodesBigEndianFields) {
   EXPECT_EQ(req.value, "value");
 }
 
+TEST(ProtocolCodecTest, TryParseFrameParsesClientResponse) {
+  ClientResponse resp{.request_id = 3, .status = ResponseStatus::kOk, .value = "value"};
+  std::vector<uint8_t> buffer;
+  ASSERT_TRUE(EncodeClientResponse(resp, buffer).ok());
+
+  ClientRequest req;
+  ClientResponse decoded;
+  ASSERT_EQ(TryParseFrame(buffer, &req, &decoded), ParseResult::kComplete);
+  EXPECT_EQ(decoded.request_id, 3u);
+  EXPECT_EQ(decoded.status, ResponseStatus::kOk);
+  EXPECT_EQ(decoded.value, "value");
+  EXPECT_TRUE(buffer.empty());
+}
+
+TEST(TryParseFrameTest, ErrorClearsBuffer) {
+  const std::vector<uint8_t> payload = BuildRequestPayload(1, Opcode::kGet, "key", "");
+  std::vector<uint8_t> buffer =
+      BuildFrame(0x0000, kProtocolVersion, MessageType::kClientRequest, payload);
+
+  ClientRequest req;
+  ASSERT_EQ(TryParseFrame(buffer, &req, nullptr), ParseResult::kError);
+  EXPECT_TRUE(buffer.empty());
+}
+
 // --- Partial reads -------------------------------------------------------
 
 TEST(TryParseFrameTest, EmptyBufferNeedsMore) {

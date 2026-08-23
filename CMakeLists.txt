@@ -44,6 +44,8 @@ FetchContent_MakeAvailable(googletest benchmark)
 enable_testing()
 
 add_subdirectory(src)
+add_subdirectory(tools/nkv-server)
+add_subdirectory(tools/nkv-client)
 add_subdirectory(tests)
 add_subdirectory(benchmarks)
 add_subdirectory(tools/nkv-bench)

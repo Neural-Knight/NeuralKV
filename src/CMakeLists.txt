@@ -37,3 +37,36 @@ target_link_libraries(neuralkv_protocol PUBLIC neuralkv_common)
 target_compile_features(neuralkv_protocol PUBLIC cxx_std_20)
 
 neuralkv_set_warnings(neuralkv_protocol)
+
+add_library(neuralkv_net
+  net/socket_utils.cpp
+)
+
+target_include_directories(neuralkv_net PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(neuralkv_net PUBLIC neuralkv_common)
+
+target_compile_features(neuralkv_net PUBLIC cxx_std_20)
+
+neuralkv_set_warnings(neuralkv_net)
+
+add_library(neuralkv_server
+  server/handler.cpp
+  server/blocking_server.cpp
+)
+
+target_include_directories(neuralkv_server PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(neuralkv_server PUBLIC
+  neuralkv_storage
+  neuralkv_protocol
+  neuralkv_net
+)
+
+target_compile_features(neuralkv_server PUBLIC cxx_std_20)
+
+neuralkv_set_warnings(neuralkv_server)

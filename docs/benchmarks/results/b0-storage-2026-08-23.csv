@@ -1,0 +1,16 @@
+2026-08-23T13:57:10+05:30
+Running ./build/benchmarks/storage_bench
+Run on (18 X 24 MHz CPU s)
+CPU Caches:
+  L1 Data 64 KiB
+  L1 Instruction 128 KiB
+  L2 Unified 8192 KiB (x18)
+Load Average: 1.35, 1.77, 1.71
+name,iterations,real_time,cpu_time,time_unit,bytes_per_second,items_per_second,label,error_occurred,error_message
+"BM_Set_Sequential",7,2.04901e+08,2.04617e+08,ns,,4.88717e+06,,,
+"BM_Get_Sequential",8,2.23143e+08,2.22273e+08,ns,,4.49896e+06,,,
+"BM_Set_Get_Mixed",7,1.99262e+08,1.98889e+08,ns,,5.02792e+06,,,
+"BM_Concurrent_Mixed/threads:1",46382958,30.4097,30.3845,ns,,3.29115e+07,,,
+"BM_Concurrent_Mixed/threads:4",11486848,138.621,124.778,ns,,8.01422e+06,,,
+"BM_Concurrent_Mixed/threads:8",5893808,281.867,219.319,ns,,4.55957e+06,,,
+"BM_Concurrent_Mixed/threads:16",2792752,673.287,503.323,ns,,1.9868e+06,,,

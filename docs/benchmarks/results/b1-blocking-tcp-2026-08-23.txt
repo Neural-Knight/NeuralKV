@@ -1,0 +1,7 @@
+command: nkv-bench --bench --host 127.0.0.1 --port 50067 --duration 20 --clients 1 --ratio 80
+date: 2026-08-23
+total ops: 1454920
+ops/sec:   72745.9
+p50 (us):  13
+p95 (us):  18
+p99 (us):  22
