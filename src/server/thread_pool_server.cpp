@@ -1,4 +1,4 @@
-#include "server/blocking_server.h"
+#include "server/thread_pool_server.h"
 
 #include <cerrno>
 #include <cstring>
@@ -32,8 +32,9 @@ uint16_t ResolveBoundPort(int fd, uint16_t requested_port) {
 
 }  // namespace
 
-BlockingServer::BlockingServer(std::string host, uint16_t port, ShardedKV& kv)
-    : host_(std::move(host)), port_(port), handler_(kv) {
+ThreadPoolServer::ThreadPoolServer(std::string host, uint16_t port, ShardedKV& kv,
+                                    std::size_t num_workers)
+    : host_(std::move(host)), port_(port), handler_(kv), pool_(num_workers) {
   Result<int> listen_result = net::TcpListen(host_, port_);
   if (!listen_result.ok()) {
     bind_status_ = listen_result.status();
@@ -43,15 +44,15 @@ BlockingServer::BlockingServer(std::string host, uint16_t port, ShardedKV& kv)
   port_ = ResolveBoundPort(listen_fd_.get(), port_);
 }
 
-void BlockingServer::Stop() {
+void ThreadPoolServer::Stop() {
   stop_.store(true);
-  // Closing the listen socket wakes a thread blocked in accept() even
-  // without a signal; the destructor's later close on the same (already
-  // invalid) fd is a harmless no-op.
+  // Closing the listen socket wakes a thread blocked in accept(); the
+  // destructor's later close on the same (already invalid) fd is a
+  // harmless no-op.
   net::CloseQuietly(listen_fd_.get());
 }
 
-Status BlockingServer::Run() {
+Status ThreadPoolServer::Run() {
   if (!bind_status_.ok()) {
     return bind_status_;
   }
@@ -63,12 +64,12 @@ Status BlockingServer::Run() {
       if (stop_.load()) break;
       return Status::Error(ErrorCode::kIOError, std::string("accept: ") + std::strerror(errno));
     }
-    ServeConnection(client_fd);
-    net::CloseQuietly(client_fd);
+    pool_.Submit([this, client_fd]() {
+      ServeClientSession(client_fd, handler_);
+      net::CloseQuietly(client_fd);
+    });
   }
   return Status::Ok();
 }
-
-void BlockingServer::ServeConnection(int fd) { ServeClientSession(fd, handler_); }
 
 }  // namespace neuralkv

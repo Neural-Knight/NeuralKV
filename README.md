@@ -21,7 +21,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Run the benchmark sanity check and the load-generator CLI skeleton:
+Run the benchmark sanity check and the load generator's help text:
 
 ```sh
 ./build/benchmarks/noop_bench
@@ -41,6 +41,11 @@ inside an Ubuntu container:
 
 Start a server, then point nkv-bench at it: `nkv-server --port 7400 &` then
 `nkv-bench --bench --host 127.0.0.1 --port 7400 --duration 30 --clients 16`.
+
+To compare the blocking baseline (B1) against the thread-pool server (B2),
+run the same nkv-bench command against each: `nkv-server --port 7400`
+(single-threaded) vs. `nkv-server --port 7400 --workers 8` (thread pool),
+then diff the throughput and percentiles nkv-bench prints for each run.
 
 ## Project Layout
 

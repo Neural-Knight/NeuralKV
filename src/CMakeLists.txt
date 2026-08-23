@@ -52,9 +52,25 @@ target_compile_features(neuralkv_net PUBLIC cxx_std_20)
 
 neuralkv_set_warnings(neuralkv_net)
 
+add_library(neuralkv_concurrency
+  concurrency/thread_pool.cpp
+)
+
+target_include_directories(neuralkv_concurrency PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(neuralkv_concurrency PUBLIC neuralkv_common)
+
+target_compile_features(neuralkv_concurrency PUBLIC cxx_std_20)
+
+neuralkv_set_warnings(neuralkv_concurrency)
+
 add_library(neuralkv_server
   server/handler.cpp
+  server/connection_session.cpp
   server/blocking_server.cpp
+  server/thread_pool_server.cpp
 )
 
 target_include_directories(neuralkv_server PUBLIC
@@ -65,6 +81,7 @@ target_link_libraries(neuralkv_server PUBLIC
   neuralkv_storage
   neuralkv_protocol
   neuralkv_net
+  neuralkv_concurrency
 )
 
 target_compile_features(neuralkv_server PUBLIC cxx_std_20)

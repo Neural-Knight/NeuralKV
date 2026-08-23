@@ -20,6 +20,7 @@ gtest_discover_tests(neuralkv_unit_tests)
 
 add_executable(neuralkv_integration_tests
   integration/tcp_server_test.cpp
+  integration/concurrent_server_test.cpp
 )
 
 target_link_libraries(neuralkv_integration_tests PRIVATE

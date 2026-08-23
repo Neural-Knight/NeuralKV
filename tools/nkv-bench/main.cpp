@@ -25,6 +25,7 @@ struct BenchOptions {
   int clients = 1;
   int ratio = 80;  // percent of ops that are GET
   bool bench_mode = false;
+  std::string label;
 };
 
 struct ClientResult {
@@ -42,6 +43,7 @@ void PrintUsage() {
       "  --clients <n>       Concurrent client connections (default: 1)\n"
       "  --ratio <pct>       Percent of ops that are GET (default: 80)\n"
       "  --bench             Run the load benchmark against a live server\n"
+      "  --label <text>      Tag printed with the results (default: none)\n"
       "  --help              Show this message\n";
 }
 
@@ -168,6 +170,9 @@ void RunBenchmark(const BenchOptions& options) {
   const double ops_per_sec =
       elapsed_sec > 0 ? static_cast<double>(all_latencies.size()) / elapsed_sec : 0.0;
 
+  if (!options.label.empty()) {
+    std::cout << "label:     " << options.label << "\n";
+  }
   std::cout << "total ops: " << all_latencies.size() << "\n"
             << "ops/sec:   " << ops_per_sec << "\n"
             << "p50 (us):  " << Percentile(all_latencies, 0.50) << "\n"
@@ -197,6 +202,8 @@ int main(int argc, char** argv) {
       options.ratio = std::stoi(std::string(NextArg(argc, argv, i, arg)));
     } else if (arg == "--bench") {
       options.bench_mode = true;
+    } else if (arg == "--label") {
+      options.label = NextArg(argc, argv, i, arg);
     } else {
       std::cerr << "unknown argument: " << arg << "\n";
       PrintUsage();
