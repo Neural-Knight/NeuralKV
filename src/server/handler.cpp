@@ -26,11 +26,25 @@ protocol::ResponseStatus ToResponseStatus(ErrorCode code) {
 
 }  // namespace
 
-RequestHandler::RequestHandler(persistence::DurableStorage& storage) : storage_(storage) {}
+RequestHandler::RequestHandler(persistence::DurableStorage& storage,
+                                const cluster::ClusterConfig* cluster_config)
+    : storage_(storage), cluster_config_(cluster_config) {}
+
+bool RequestHandler::IsLeader() const {
+  return cluster_config_ == nullptr || cluster_config_->local_node_id == cluster_config_->leader_node_id;
+}
 
 protocol::ClientResponse RequestHandler::Handle(const protocol::ClientRequest& req) {
   protocol::ClientResponse resp;
   resp.request_id = req.request_id;
+
+  const bool is_write =
+      req.opcode == protocol::Opcode::kSet || req.opcode == protocol::Opcode::kDelete;
+  if (is_write && !IsLeader()) {
+    resp.status = protocol::ResponseStatus::kWrongLeader;
+    resp.leader_hint = cluster_config_->leader_node_id;
+    return resp;
+  }
 
   switch (req.opcode) {
     case protocol::Opcode::kSet: {
@@ -53,6 +67,23 @@ protocol::ClientResponse RequestHandler::Handle(const protocol::ClientRequest& r
       resp.status = ToResponseStatus(status.code());
       break;
     }
+    default:
+      resp.status = protocol::ResponseStatus::kBadRequest;
+      break;
+  }
+
+  return resp;
+}
+
+protocol::ClusterResponse RequestHandler::HandleCluster(const protocol::ClusterRequest& req) {
+  protocol::ClusterResponse resp;
+  resp.request_id = req.request_id;
+
+  switch (req.opcode) {
+    case protocol::ClusterOpcode::kPing:
+      resp.status = protocol::ResponseStatus::kOk;
+      resp.body = "pong";
+      break;
     default:
       resp.status = protocol::ResponseStatus::kBadRequest;
       break;

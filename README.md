@@ -63,6 +63,15 @@ append+sync+apply), throughput does not scale with `--workers` or
 connection count the way B2/B4's read-heavy numbers did — use
 `--label b5-wal` to tag the run.
 
+## Cluster (static leader, no consensus yet)
+
+`./scripts/run_cluster.sh` starts a 3-node cluster on localhost with a
+fixed leader (node 1). Writes against a follower come back as
+`WRONG_LEADER` with the leader's node id; `nkv-client --cluster-config
+<path>` follows that redirect automatically. See
+[docs/cluster-config.md](docs/cluster-config.md) for the config file
+format and exactly what is and isn't replicated before Raft (M8) lands.
+
 ## Project Layout
 
 ```
@@ -72,6 +81,7 @@ src/protocol/     binary wire protocol: frame codec, request/response types
 src/net/          POSIX socket RAII, blocking I/O helpers, connection state
                   machine, epoll event loop (Linux only)
 src/persistence/  write-ahead log, crash recovery, durable storage engine
+src/cluster/      static cluster config, node-to-node RPC transport
 src/server/       request handler, blocking and thread-pool TCP servers
 tests/unit/       GoogleTest unit tests
 tests/integration/ end-to-end tests against a forked nkv-server subprocess
@@ -80,7 +90,7 @@ tools/nkv-server/ standalone server binary
 tools/nkv-client/ one-shot CLI client (set/get/delete)
 tools/nkv-bench/  load generator and latency benchmark
 docker/           Linux container build definition
-scripts/          helper scripts (Docker build/test)
+scripts/          helper scripts (Docker build/test, run_cluster.sh)
 docs/             design docs and benchmark methodology
 ```
 

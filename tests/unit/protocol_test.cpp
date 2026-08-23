@@ -123,6 +123,76 @@ TEST(ProtocolCodecTest, RoundTripNotFoundResponse) {
       DecodeClientResponse(std::span(encoded).subspan(kFrameHeaderSize), decoded).ok());
   EXPECT_EQ(decoded.status, ResponseStatus::kNotFound);
   EXPECT_TRUE(decoded.value.empty());
+  EXPECT_EQ(decoded.leader_hint, 0u);
+}
+
+TEST(ProtocolCodecTest, RoundTripWrongLeaderResponseCarriesHint) {
+  ClientResponse resp{
+      .request_id = 8, .status = ResponseStatus::kWrongLeader, .value = "", .leader_hint = 3};
+  std::vector<uint8_t> encoded;
+  ASSERT_TRUE(EncodeClientResponse(resp, encoded).ok());
+
+  ClientResponse decoded;
+  ASSERT_TRUE(
+      DecodeClientResponse(std::span(encoded).subspan(kFrameHeaderSize), decoded).ok());
+  EXPECT_EQ(decoded.status, ResponseStatus::kWrongLeader);
+  EXPECT_EQ(decoded.leader_hint, 3u);
+}
+
+TEST(ProtocolCodecTest, RoundTripClusterPingRequest) {
+  ClusterRequest req{.request_id = 11, .opcode = ClusterOpcode::kPing, .body = ""};
+  std::vector<uint8_t> encoded;
+  ASSERT_TRUE(EncodeClusterRequest(req, encoded).ok());
+
+  ClusterRequest decoded;
+  ASSERT_TRUE(
+      DecodeClusterRequest(std::span(encoded).subspan(kFrameHeaderSize), decoded).ok());
+  EXPECT_EQ(decoded.request_id, 11u);
+  EXPECT_EQ(decoded.opcode, ClusterOpcode::kPing);
+  EXPECT_TRUE(decoded.body.empty());
+}
+
+TEST(ProtocolCodecTest, RoundTripClusterPongResponse) {
+  ClusterResponse resp{.request_id = 11, .status = ResponseStatus::kOk, .body = "pong"};
+  std::vector<uint8_t> encoded;
+  ASSERT_TRUE(EncodeClusterResponse(resp, encoded).ok());
+
+  ClusterResponse decoded;
+  ASSERT_TRUE(
+      DecodeClusterResponse(std::span(encoded).subspan(kFrameHeaderSize), decoded).ok());
+  EXPECT_EQ(decoded.request_id, 11u);
+  EXPECT_EQ(decoded.status, ResponseStatus::kOk);
+  EXPECT_EQ(decoded.body, "pong");
+}
+
+TEST(ProtocolCodecTest, TryParseFrameDispatchesClusterRequest) {
+  ClusterRequest req{.request_id = 1, .opcode = ClusterOpcode::kPing, .body = ""};
+  std::vector<uint8_t> buffer;
+  ASSERT_TRUE(EncodeClusterRequest(req, buffer).ok());
+
+  ClusterRequest decoded_req;
+  ClusterResponse decoded_resp;
+  MessageType type;
+  ASSERT_EQ(TryParseFrame(buffer, nullptr, nullptr, &decoded_req, &decoded_resp, &type),
+            ParseResult::kComplete);
+  EXPECT_EQ(type, MessageType::kClusterRequest);
+  EXPECT_EQ(decoded_req.opcode, ClusterOpcode::kPing);
+  EXPECT_TRUE(buffer.empty());
+}
+
+TEST(ProtocolCodecTest, TryParseFrameDispatchesClusterResponse) {
+  ClusterResponse resp{.request_id = 2, .status = ResponseStatus::kOk, .body = "pong"};
+  std::vector<uint8_t> buffer;
+  ASSERT_TRUE(EncodeClusterResponse(resp, buffer).ok());
+
+  ClusterRequest decoded_req;
+  ClusterResponse decoded_resp;
+  MessageType type;
+  ASSERT_EQ(TryParseFrame(buffer, nullptr, nullptr, &decoded_req, &decoded_resp, &type),
+            ParseResult::kComplete);
+  EXPECT_EQ(type, MessageType::kClusterResponse);
+  EXPECT_EQ(decoded_resp.status, ResponseStatus::kOk);
+  EXPECT_EQ(decoded_resp.body, "pong");
 }
 
 // --- Endianness ---------------------------------------------------------

@@ -15,12 +15,14 @@
 #include "net/socket_utils.h"
 #include "protocol/codec.h"
 #include "protocol/types.h"
+#include "test_support.h"
 
 namespace neuralkv {
 namespace {
 
-// Forks nkv-server with an ephemeral port and parses the port it reports on
-// stdout, giving each test an isolated server instance to talk to.
+// Forks nkv-server against an isolated --data-dir and an ephemeral port,
+// parsing the port it reports on stdout, giving each test its own server
+// instance and its own WAL to talk to.
 class TestServer {
  public:
   TestServer() {
@@ -35,14 +37,15 @@ class TestServer {
       ::close(pipe_fds[0]);
       ::dup2(pipe_fds[1], STDOUT_FILENO);
       ::close(pipe_fds[1]);
-      ::execl(NKV_SERVER_PATH, NKV_SERVER_PATH, "--port", "0", nullptr);
+      ::execl(NKV_SERVER_PATH, NKV_SERVER_PATH, "--port", "0", "--data-dir",
+              data_dir_.path().c_str(), nullptr);
       std::perror("execl");
       ::_exit(127);
     }
 
     ::close(pipe_fds[1]);
     read_fd_ = pipe_fds[0];
-    port_ = ParsePortFromChildOutput();
+    port_ = testutil::ParsePortFromChildOutput(read_fd_);
   }
 
   ~TestServer() {
@@ -59,17 +62,8 @@ class TestServer {
   uint16_t port() const { return port_; }
 
  private:
-  uint16_t ParsePortFromChildOutput() {
-    std::string line;
-    char c = 0;
-    while (::read(read_fd_, &c, 1) == 1 && c != '\n') {
-      line.push_back(c);
-    }
-    const size_t colon = line.rfind(':');
-    if (colon == std::string::npos) return 0;
-    return static_cast<uint16_t>(std::stoi(line.substr(colon + 1)));
-  }
-
+  // Declared first so the temp dir exists before fork()/execl() reference it.
+  testutil::TempDataDir data_dir_;
   pid_t pid_ = -1;
   int read_fd_ = -1;
   uint16_t port_ = 0;

@@ -8,6 +8,8 @@ namespace neuralkv::protocol {
 enum class MessageType : uint8_t {
   kClientRequest = 0x01,
   kClientResponse = 0x02,
+  kClusterRequest = 0x10,
+  kClusterResponse = 0x11,
 };
 
 enum class Opcode : uint8_t {
@@ -24,6 +26,13 @@ enum class ResponseStatus : uint16_t {
   kWrongLeader = 4,
 };
 
+// Internal node-to-node RPCs. Real payloads (log entries, votes) arrive
+// with Raft; for now only a liveness check.
+enum class ClusterOpcode : uint8_t {
+  kPing = 1,
+  kPong = 2,
+};
+
 struct ClientRequest {
   uint64_t request_id = 0;
   Opcode opcode = Opcode::kGet;
@@ -35,6 +44,21 @@ struct ClientResponse {
   uint64_t request_id = 0;
   ResponseStatus status = ResponseStatus::kOk;
   std::string value;
+  // Set alongside kWrongLeader so the client knows which node to retry
+  // against; 0 when not applicable.
+  uint32_t leader_hint = 0;
+};
+
+struct ClusterRequest {
+  uint64_t request_id = 0;
+  ClusterOpcode opcode = ClusterOpcode::kPing;
+  std::string body;  // empty for Ping
+};
+
+struct ClusterResponse {
+  uint64_t request_id = 0;
+  ResponseStatus status = ResponseStatus::kOk;
+  std::string body;
 };
 
 // Outcome of an incremental parse attempt against a streaming byte buffer.

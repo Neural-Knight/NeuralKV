@@ -10,6 +10,7 @@
 
 #include <sys/epoll.h>
 
+#include "cluster/cluster_config.h"
 #include "common/status.h"
 #include "net/connection.h"
 #include "net/socket_utils.h"
@@ -24,7 +25,8 @@ namespace neuralkv::net {
 // writes, and reads go straight to the already thread-safe ShardedKV.
 class EpollServer {
  public:
-  EpollServer(std::string host, uint16_t port, persistence::DurableStorage& storage);
+  EpollServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
+              const cluster::ClusterConfig* cluster_config = nullptr);
 
   // Runs the event loop until Stop() is called. Returns Ok() on a clean
   // shutdown, or the error that ended the loop early.

@@ -51,17 +51,29 @@ Status Connection::OnWritable() {
 void Connection::ProcessFrames(RequestHandler& handler) {
   while (true) {
     protocol::ClientRequest req;
-    const protocol::ParseResult result = protocol::TryParseFrame(read_buffer_, &req, nullptr);
+    protocol::ClusterRequest cluster_req;
+    protocol::MessageType type;
+    const protocol::ParseResult result =
+        protocol::TryParseFrame(read_buffer_, &req, nullptr, &cluster_req, nullptr, &type);
     if (result == protocol::ParseResult::kNeedMore) break;
     if (result == protocol::ParseResult::kError) {
       MarkClosed();
       return;
     }
 
-    const protocol::ClientResponse resp = handler.Handle(req);
     std::vector<uint8_t> encoded;
-    if (!protocol::EncodeClientResponse(resp, encoded).ok()) {
-      MarkClosed();
+    if (type == protocol::MessageType::kClientRequest) {
+      if (!protocol::EncodeClientResponse(handler.Handle(req), encoded).ok()) {
+        MarkClosed();
+        return;
+      }
+    } else if (type == protocol::MessageType::kClusterRequest) {
+      if (!protocol::EncodeClusterResponse(handler.HandleCluster(cluster_req), encoded).ok()) {
+        MarkClosed();
+        return;
+      }
+    } else {
+      MarkClosed();  // a response-typed frame has no business arriving here
       return;
     }
     write_buffer_.insert(write_buffer_.end(), encoded.begin(), encoded.end());

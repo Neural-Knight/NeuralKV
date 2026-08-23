@@ -18,13 +18,23 @@ void ServeClientSession(int client_fd, RequestHandler& handler) {
   while (true) {
     for (;;) {
       protocol::ClientRequest req;
-      const protocol::ParseResult result = protocol::TryParseFrame(read_buffer, &req, nullptr);
+      protocol::ClusterRequest cluster_req;
+      protocol::MessageType type;
+      const protocol::ParseResult result =
+          protocol::TryParseFrame(read_buffer, &req, nullptr, &cluster_req, nullptr, &type);
       if (result == protocol::ParseResult::kNeedMore) break;
       if (result == protocol::ParseResult::kError) return;
 
-      const protocol::ClientResponse resp = handler.Handle(req);
       std::vector<uint8_t> encoded;
-      if (!protocol::EncodeClientResponse(resp, encoded).ok()) return;
+      if (type == protocol::MessageType::kClientRequest) {
+        if (!protocol::EncodeClientResponse(handler.Handle(req), encoded).ok()) return;
+      } else if (type == protocol::MessageType::kClusterRequest) {
+        if (!protocol::EncodeClusterResponse(handler.HandleCluster(cluster_req), encoded).ok()) {
+          return;
+        }
+      } else {
+        return;  // a response-typed frame has no business arriving here
+      }
       if (!net::WriteFull(client_fd, encoded.data(), encoded.size()).ok()) return;
     }
 

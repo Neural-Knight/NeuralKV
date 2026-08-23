@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 
+#include "cluster/cluster_config.h"
 #include "common/status.h"
 #include "net/socket_utils.h"
 #include "persistence/durable_storage.h"
@@ -15,7 +16,8 @@ namespace neuralkv {
 // during construction so port() is valid before Run() is called.
 class BlockingServer {
  public:
-  BlockingServer(std::string host, uint16_t port, persistence::DurableStorage& storage);
+  BlockingServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
+                 const cluster::ClusterConfig* cluster_config = nullptr);
 
   // Serves connections until Stop() is called from another thread (or a
   // signal handler interrupts the blocking accept()). Returns Ok() on a

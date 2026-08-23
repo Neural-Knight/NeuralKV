@@ -10,3 +10,4 @@ data/
 *.exe
 compile_commands.json
 .DS_Store
+.claude/

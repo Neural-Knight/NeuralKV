@@ -4,6 +4,7 @@ add_executable(neuralkv_unit_tests
   unit/storage_test.cpp
   unit/protocol_test.cpp
   unit/wal_test.cpp
+  unit/cluster_config_test.cpp
 )
 
 target_link_libraries(neuralkv_unit_tests PRIVATE
@@ -11,6 +12,7 @@ target_link_libraries(neuralkv_unit_tests PRIVATE
   neuralkv_storage
   neuralkv_protocol
   neuralkv_persistence
+  neuralkv_cluster
   GTest::gtest
   GTest::gtest_main
 )
@@ -24,6 +26,7 @@ add_executable(neuralkv_integration_tests
   integration/tcp_server_test.cpp
   integration/concurrent_server_test.cpp
   integration/crash_recovery_test.cpp
+  integration/cluster_transport_test.cpp
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

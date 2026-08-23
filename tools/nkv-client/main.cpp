@@ -9,6 +9,7 @@
 
 #include <unistd.h>
 
+#include "cluster/cluster_config.h"
 #include "common/result.h"
 #include "common/status.h"
 #include "net/socket_utils.h"
@@ -25,10 +26,12 @@ using neuralkv::protocol::ResponseStatus;
 void PrintUsage() {
   std::cout << "nkv-client - NeuralKV command-line client\n\n"
                "Usage:\n"
-               "  nkv-client [--host <addr>] [--port <n>] set <key> <value>\n"
-               "  nkv-client [--host <addr>] [--port <n>] get <key>\n"
-               "  nkv-client [--host <addr>] [--port <n>] delete <key>\n"
-               "  nkv-client --help\n";
+               "  nkv-client [--host <addr>] [--port <n>] [--cluster-config <path>] set <key> <value>\n"
+               "  nkv-client [--host <addr>] [--port <n>] [--cluster-config <path>] get <key>\n"
+               "  nkv-client [--host <addr>] [--port <n>] [--cluster-config <path>] delete <key>\n"
+               "  nkv-client --help\n\n"
+               "With --cluster-config set, a WRONG_LEADER response is followed once by a\n"
+               "retry against the leader node it names.\n";
 }
 
 std::string_view NextArg(int argc, char** argv, int& i, std::string_view flag_name) {
@@ -93,11 +96,21 @@ neuralkv::Result<ClientResponse> SendRequest(int fd, const ClientRequest& req) {
   }
 }
 
+// Connects to host:port and performs one request/response round trip.
+neuralkv::Result<ClientResponse> ConnectAndSend(const std::string& host, uint16_t port,
+                                                 const ClientRequest& req) {
+  neuralkv::Result<int> conn_result = neuralkv::net::TcpConnect(host, port);
+  if (!conn_result.ok()) return conn_result.status();
+  neuralkv::net::Fd fd(conn_result.value());
+  return SendRequest(fd.get(), req);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   std::string host = "127.0.0.1";
   uint16_t port = 7400;
+  std::string cluster_config_path;
   std::vector<std::string> positional;
 
   for (int i = 1; i < argc; ++i) {
@@ -109,6 +122,8 @@ int main(int argc, char** argv) {
       host = std::string(NextArg(argc, argv, i, arg));
     } else if (arg == "--port") {
       port = static_cast<uint16_t>(std::stoi(std::string(NextArg(argc, argv, i, arg))));
+    } else if (arg == "--cluster-config") {
+      cluster_config_path = std::string(NextArg(argc, argv, i, arg));
     } else {
       positional.emplace_back(arg);
     }
@@ -152,20 +167,43 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  neuralkv::Result<int> conn_result = neuralkv::net::TcpConnect(host, port);
-  if (!conn_result.ok()) {
-    std::cerr << "connect failed: " << conn_result.status().message() << "\n";
-    return EXIT_FAILURE;
-  }
-  neuralkv::net::Fd fd(conn_result.value());
-
-  neuralkv::Result<ClientResponse> result = SendRequest(fd.get(), req);
+  neuralkv::Result<ClientResponse> result = ConnectAndSend(host, port, req);
   if (!result.ok()) {
     std::cerr << result.status().message() << "\n";
     return EXIT_FAILURE;
   }
 
-  const ClientResponse& resp = result.value();
+  ClientResponse resp = result.value();
+  if (resp.status == ResponseStatus::kWrongLeader && resp.leader_hint != 0) {
+    if (cluster_config_path.empty()) {
+      std::cerr << "server reports leader is node " << resp.leader_hint
+                 << "; pass --cluster-config to redirect automatically\n";
+    } else {
+      neuralkv::cluster::ClusterConfig cluster_config;
+      const neuralkv::Status load_status =
+          neuralkv::cluster::LoadClusterConfig(cluster_config_path, cluster_config);
+      if (!load_status.ok()) {
+        std::cerr << "failed to load cluster config: " << load_status.message() << "\n";
+        return EXIT_FAILURE;
+      }
+      const neuralkv::cluster::PeerInfo* leader = cluster_config.FindPeer(resp.leader_hint);
+      if (leader == nullptr) {
+        std::cerr << "leader node " << resp.leader_hint << " is not in " << cluster_config_path
+                   << "\n";
+        return EXIT_FAILURE;
+      }
+
+      std::cerr << "redirected to leader node " << leader->node_id << " at " << leader->host
+                 << ":" << leader->port << "\n";
+      neuralkv::Result<ClientResponse> retry_result = ConnectAndSend(leader->host, leader->port, req);
+      if (!retry_result.ok()) {
+        std::cerr << retry_result.status().message() << "\n";
+        return EXIT_FAILURE;
+      }
+      resp = retry_result.value();
+    }
+  }
+
   if (resp.status == ResponseStatus::kOk) {
     if (command == "get") {
       std::cout << resp.value << "\n";

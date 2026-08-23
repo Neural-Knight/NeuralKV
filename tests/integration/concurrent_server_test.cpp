@@ -17,12 +17,13 @@
 #include "net/socket_utils.h"
 #include "protocol/codec.h"
 #include "protocol/types.h"
+#include "test_support.h"
 
 namespace neuralkv {
 namespace {
 
-// Forks nkv-server with the given worker count and an ephemeral port,
-// parsing the port it reports on stdout.
+// Forks nkv-server against an isolated --data-dir with the given worker
+// count and an ephemeral port, parsing the port it reports on stdout.
 class TestServer {
  public:
   explicit TestServer(int workers) {
@@ -39,14 +40,14 @@ class TestServer {
       ::close(pipe_fds[1]);
       const std::string workers_arg = std::to_string(workers);
       ::execl(NKV_SERVER_PATH, NKV_SERVER_PATH, "--port", "0", "--workers", workers_arg.c_str(),
-              nullptr);
+              "--data-dir", data_dir_.path().c_str(), nullptr);
       std::perror("execl");
       ::_exit(127);
     }
 
     ::close(pipe_fds[1]);
     read_fd_ = pipe_fds[0];
-    port_ = ParsePortFromChildOutput();
+    port_ = testutil::ParsePortFromChildOutput(read_fd_);
   }
 
   ~TestServer() {
@@ -63,17 +64,7 @@ class TestServer {
   uint16_t port() const { return port_; }
 
  private:
-  uint16_t ParsePortFromChildOutput() {
-    std::string line;
-    char c = 0;
-    while (::read(read_fd_, &c, 1) == 1 && c != '\n') {
-      line.push_back(c);
-    }
-    const size_t colon = line.rfind(':');
-    if (colon == std::string::npos) return 0;
-    return static_cast<uint16_t>(std::stoi(line.substr(colon + 1)));
-  }
-
+  testutil::TempDataDir data_dir_;
   pid_t pid_ = -1;
   int read_fd_ = -1;
   uint16_t port_ = 0;

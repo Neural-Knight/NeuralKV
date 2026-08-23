@@ -15,35 +15,12 @@
 #include "net/socket_utils.h"
 #include "protocol/codec.h"
 #include "protocol/types.h"
+#include "test_support.h"
 
 namespace neuralkv {
 namespace {
 
-// Fresh temp directory for one test's --data-dir; removes the files
-// nkv-server creates in it on destruction.
-class TempDataDir {
- public:
-  TempDataDir() {
-    char pattern[] = "/tmp/nkv_crash_test_XXXXXX";
-    const char* dir = ::mkdtemp(pattern);
-    if (dir == nullptr) {
-      std::perror("mkdtemp");
-      std::abort();
-    }
-    path_ = dir;
-  }
-
-  ~TempDataDir() {
-    ::unlink((path_ + "/wal/wal.log").c_str());
-    ::rmdir((path_ + "/wal").c_str());
-    ::rmdir(path_.c_str());
-  }
-
-  const std::string& path() const { return path_; }
-
- private:
-  std::string path_;
-};
+using testutil::TempDataDir;
 
 // Forks nkv-server against a given --data-dir and an ephemeral port,
 // parsing the port it reports on stdout. Unlike the other integration

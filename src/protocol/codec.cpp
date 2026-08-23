@@ -92,7 +92,7 @@ Status EncodeClientRequest(const ClientRequest& req, std::vector<uint8_t>& out) 
 }
 
 Status EncodeClientResponse(const ClientResponse& resp, std::vector<uint8_t>& out) {
-  const std::size_t payload_size = 8 + 2 + 4 + resp.value.size();
+  const std::size_t payload_size = 8 + 2 + 4 + resp.value.size() + 4;
   if (payload_size > kMaxPayloadSize) {
     return Status::Error(ErrorCode::kInvalidArgument, "payload exceeds max size");
   }
@@ -108,6 +108,49 @@ Status EncodeClientResponse(const ClientResponse& resp, std::vector<uint8_t>& ou
   WriteU16BE(out, static_cast<uint16_t>(resp.status));
   WriteU32BE(out, static_cast<uint32_t>(resp.value.size()));
   out.insert(out.end(), resp.value.begin(), resp.value.end());
+  WriteU32BE(out, resp.leader_hint);
+
+  return Status::Ok();
+}
+
+Status EncodeClusterRequest(const ClusterRequest& req, std::vector<uint8_t>& out) {
+  const std::size_t payload_size = 8 + 1 + 4 + req.body.size();
+  if (payload_size > kMaxPayloadSize) {
+    return Status::Error(ErrorCode::kInvalidArgument, "payload exceeds max size");
+  }
+
+  out.clear();
+  out.reserve(kFrameHeaderSize + payload_size);
+  WriteU16BE(out, kMagic);
+  out.push_back(kProtocolVersion);
+  out.push_back(static_cast<uint8_t>(MessageType::kClusterRequest));
+  WriteU32BE(out, static_cast<uint32_t>(payload_size));
+
+  WriteU64BE(out, req.request_id);
+  out.push_back(static_cast<uint8_t>(req.opcode));
+  WriteU32BE(out, static_cast<uint32_t>(req.body.size()));
+  out.insert(out.end(), req.body.begin(), req.body.end());
+
+  return Status::Ok();
+}
+
+Status EncodeClusterResponse(const ClusterResponse& resp, std::vector<uint8_t>& out) {
+  const std::size_t payload_size = 8 + 2 + 4 + resp.body.size();
+  if (payload_size > kMaxPayloadSize) {
+    return Status::Error(ErrorCode::kInvalidArgument, "payload exceeds max size");
+  }
+
+  out.clear();
+  out.reserve(kFrameHeaderSize + payload_size);
+  WriteU16BE(out, kMagic);
+  out.push_back(kProtocolVersion);
+  out.push_back(static_cast<uint8_t>(MessageType::kClusterResponse));
+  WriteU32BE(out, static_cast<uint32_t>(payload_size));
+
+  WriteU64BE(out, resp.request_id);
+  WriteU16BE(out, static_cast<uint16_t>(resp.status));
+  WriteU32BE(out, static_cast<uint32_t>(resp.body.size()));
+  out.insert(out.end(), resp.body.begin(), resp.body.end());
 
   return Status::Ok();
 }
@@ -191,6 +234,10 @@ Status DecodeClientResponse(std::span<const uint8_t> payload, ClientResponse& ou
   std::string value(reinterpret_cast<const char*>(payload.data() + offset), value_len);
   offset += value_len;
 
+  if (payload.size() < offset + 4) return TruncatedPayload();
+  const uint32_t leader_hint = ReadU32BE(payload.data() + offset);
+  offset += 4;
+
   if (offset != payload.size()) {
     return Status::Error(ErrorCode::kInvalidArgument, "trailing bytes after payload");
   }
@@ -198,11 +245,76 @@ Status DecodeClientResponse(std::span<const uint8_t> payload, ClientResponse& ou
   out.request_id = request_id;
   out.status = static_cast<ResponseStatus>(status_code);
   out.value = std::move(value);
+  out.leader_hint = leader_hint;
+  return Status::Ok();
+}
+
+Status DecodeClusterRequest(std::span<const uint8_t> payload, ClusterRequest& out) {
+  std::size_t offset = 0;
+
+  if (payload.size() < offset + 8) return TruncatedPayload();
+  const uint64_t request_id = ReadU64BE(payload.data() + offset);
+  offset += 8;
+
+  if (payload.size() < offset + 1) return TruncatedPayload();
+  const uint8_t opcode_byte = payload[offset];
+  offset += 1;
+  if (opcode_byte < static_cast<uint8_t>(ClusterOpcode::kPing) ||
+      opcode_byte > static_cast<uint8_t>(ClusterOpcode::kPong)) {
+    return Status::Error(ErrorCode::kInvalidArgument, "unknown cluster opcode");
+  }
+
+  if (payload.size() < offset + 4) return TruncatedPayload();
+  const uint32_t body_len = ReadU32BE(payload.data() + offset);
+  offset += 4;
+  if (payload.size() < offset + body_len) return TruncatedPayload();
+  std::string body(reinterpret_cast<const char*>(payload.data() + offset), body_len);
+  offset += body_len;
+
+  if (offset != payload.size()) {
+    return Status::Error(ErrorCode::kInvalidArgument, "trailing bytes after payload");
+  }
+
+  out.request_id = request_id;
+  out.opcode = static_cast<ClusterOpcode>(opcode_byte);
+  out.body = std::move(body);
+  return Status::Ok();
+}
+
+Status DecodeClusterResponse(std::span<const uint8_t> payload, ClusterResponse& out) {
+  std::size_t offset = 0;
+
+  if (payload.size() < offset + 8) return TruncatedPayload();
+  const uint64_t request_id = ReadU64BE(payload.data() + offset);
+  offset += 8;
+
+  if (payload.size() < offset + 2) return TruncatedPayload();
+  const uint16_t status_code = ReadU16BE(payload.data() + offset);
+  offset += 2;
+  if (status_code > static_cast<uint16_t>(ResponseStatus::kWrongLeader)) {
+    return Status::Error(ErrorCode::kInvalidArgument, "unknown response status");
+  }
+
+  if (payload.size() < offset + 4) return TruncatedPayload();
+  const uint32_t body_len = ReadU32BE(payload.data() + offset);
+  offset += 4;
+  if (payload.size() < offset + body_len) return TruncatedPayload();
+  std::string body(reinterpret_cast<const char*>(payload.data() + offset), body_len);
+  offset += body_len;
+
+  if (offset != payload.size()) {
+    return Status::Error(ErrorCode::kInvalidArgument, "trailing bytes after payload");
+  }
+
+  out.request_id = request_id;
+  out.status = static_cast<ResponseStatus>(status_code);
+  out.body = std::move(body);
   return Status::Ok();
 }
 
 ParseResult TryParseFrame(std::vector<uint8_t>& buffer, ClientRequest* out_request,
-                           ClientResponse* out_response) {
+                           ClientResponse* out_response, ClusterRequest* out_cluster_request,
+                           ClusterResponse* out_cluster_response, MessageType* out_type) {
   if (buffer.size() < kFrameHeaderSize) {
     return ParseResult::kNeedMore;
   }
@@ -258,13 +370,45 @@ ParseResult TryParseFrame(std::vector<uint8_t>& buffer, ClientRequest* out_reque
       }
       break;
     }
+    case MessageType::kClusterRequest: {
+      ClusterRequest req;
+      Status status = DecodeClusterRequest(payload, req);
+      if (!status.ok()) {
+        buffer.clear();
+        return ParseResult::kError;
+      }
+      if (out_cluster_request != nullptr) {
+        *out_cluster_request = std::move(req);
+      }
+      break;
+    }
+    case MessageType::kClusterResponse: {
+      ClusterResponse resp;
+      Status status = DecodeClusterResponse(payload, resp);
+      if (!status.ok()) {
+        buffer.clear();
+        return ParseResult::kError;
+      }
+      if (out_cluster_response != nullptr) {
+        *out_cluster_response = std::move(resp);
+      }
+      break;
+    }
     default:
       buffer.clear();
       return ParseResult::kError;
   }
 
+  if (out_type != nullptr) {
+    *out_type = static_cast<MessageType>(type_byte);
+  }
   buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(frame_size));
   return ParseResult::kComplete;
+}
+
+ParseResult TryParseFrame(std::vector<uint8_t>& buffer, ClientRequest* out_request,
+                           ClientResponse* out_response) {
+  return TryParseFrame(buffer, out_request, out_response, nullptr, nullptr, nullptr);
 }
 
 }  // namespace neuralkv::protocol

@@ -92,6 +92,25 @@ target_compile_features(neuralkv_persistence PUBLIC cxx_std_20)
 
 neuralkv_set_warnings(neuralkv_persistence)
 
+add_library(neuralkv_cluster
+  cluster/cluster_config.cpp
+  cluster/transport.cpp
+)
+
+target_include_directories(neuralkv_cluster PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(neuralkv_cluster PUBLIC
+  neuralkv_common
+  neuralkv_net
+  neuralkv_protocol
+)
+
+target_compile_features(neuralkv_cluster PUBLIC cxx_std_20)
+
+neuralkv_set_warnings(neuralkv_cluster)
+
 add_library(neuralkv_server
   server/handler.cpp
   server/connection_session.cpp
@@ -109,6 +128,7 @@ target_link_libraries(neuralkv_server PUBLIC
   neuralkv_net
   neuralkv_concurrency
   neuralkv_persistence
+  neuralkv_cluster
 )
 
 target_compile_features(neuralkv_server PUBLIC cxx_std_20)

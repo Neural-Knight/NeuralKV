@@ -7,6 +7,7 @@
 
 #include <signal.h>
 
+#include "cluster/cluster_config.h"
 #include "common/config.h"
 #include "common/result.h"
 #include "common/status.h"
@@ -29,13 +30,15 @@ void PrintUsage() {
   std::cout << "nkv-server - NeuralKV single-node server\n\n"
                "Usage: nkv-server [options]\n\n"
                "Options:\n"
-               "  --host <addr>     Listen address (default: 127.0.0.1)\n"
-               "  --port <n>        Listen port (default: 7400; 0 for ephemeral)\n"
-               "  --data-dir <path> WAL and data directory (default: ./data)\n"
-               "  --workers <n>     Worker threads (default: 1)\n"
-               "  --io <mode>       blocking | threadpool | epoll (Linux only)\n"
-               "                    default: blocking if --workers 1, else threadpool\n"
-               "  --help            Show this message\n";
+               "  --host <addr>          Listen address (default: 127.0.0.1)\n"
+               "  --port <n>             Listen port (default: 7400; 0 for ephemeral)\n"
+               "  --data-dir <path>      WAL and data directory (default: ./data)\n"
+               "  --workers <n>          Worker threads (default: 1)\n"
+               "  --io <mode>            blocking | threadpool | epoll (Linux only)\n"
+               "                         default: blocking if --workers 1, else threadpool\n"
+               "  --node-id <n>          This node's cluster id (required with --cluster-config)\n"
+               "  --cluster-config <path>  Static cluster membership + leader file\n"
+               "  --help                 Show this message\n";
 }
 
 std::string_view NextArg(int argc, char** argv, int& i, std::string_view flag_name) {
@@ -62,6 +65,8 @@ int main(int argc, char** argv) {
   int workers = 1;
   [[maybe_unused]] bool workers_explicit = false;
   std::string io_mode;
+  std::string cluster_config_path;
+  uint32_t node_id_flag = 0;
 
   for (int i = 1; i < argc; ++i) {
     std::string_view arg = argv[i];
@@ -79,6 +84,10 @@ int main(int argc, char** argv) {
       workers_explicit = true;
     } else if (arg == "--io") {
       io_mode = std::string(NextArg(argc, argv, i, arg));
+    } else if (arg == "--node-id") {
+      node_id_flag = static_cast<uint32_t>(std::stoul(std::string(NextArg(argc, argv, i, arg))));
+    } else if (arg == "--cluster-config") {
+      cluster_config_path = std::string(NextArg(argc, argv, i, arg));
     } else {
       std::cerr << "unknown argument: " << arg << "\n";
       PrintUsage();
@@ -108,6 +117,27 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
+  neuralkv::cluster::ClusterConfig cluster_config;
+  const neuralkv::cluster::ClusterConfig* cluster_config_ptr = nullptr;
+  if (!cluster_config_path.empty()) {
+    if (node_id_flag == 0) {
+      std::cerr << "--node-id is required when --cluster-config is set\n";
+      return EXIT_FAILURE;
+    }
+    const neuralkv::Status status =
+        neuralkv::cluster::LoadClusterConfig(cluster_config_path, cluster_config);
+    if (!status.ok()) {
+      std::cerr << "failed to load cluster config: " << status.message() << "\n";
+      return EXIT_FAILURE;
+    }
+    if (cluster_config.local_node_id != node_id_flag) {
+      std::cerr << "--node-id " << node_id_flag << " does not match node_id "
+                << cluster_config.local_node_id << " in " << cluster_config_path << "\n";
+      return EXIT_FAILURE;
+    }
+    cluster_config_ptr = &cluster_config;
+  }
+
   neuralkv::Result<neuralkv::persistence::DurableStorage> storage_result =
       neuralkv::persistence::DurableStorage::Open(config.data_dir);
   if (!storage_result.ok()) {
@@ -121,19 +151,19 @@ int main(int argc, char** argv) {
 
   neuralkv::Status status = neuralkv::Status::Ok();
   if (io_mode == "blocking") {
-    neuralkv::BlockingServer server(config.host, config.port, storage);
+    neuralkv::BlockingServer server(config.host, config.port, storage, cluster_config_ptr);
     g_stop_callback = [&server] { server.Stop(); };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
   } else if (io_mode == "threadpool") {
     neuralkv::ThreadPoolServer server(config.host, config.port, storage,
-                                       static_cast<std::size_t>(workers));
+                                       static_cast<std::size_t>(workers), cluster_config_ptr);
     g_stop_callback = [&server] { server.Stop(); };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
   } else {
 #ifdef NEURALKV_LINUX
-    neuralkv::net::EpollServer server(config.host, config.port, storage);
+    neuralkv::net::EpollServer server(config.host, config.port, storage, cluster_config_ptr);
     g_stop_callback = [&server] { server.Stop(); };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
