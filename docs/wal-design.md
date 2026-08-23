@@ -1,10 +1,11 @@
 # Write-Ahead Log
 
-Single-node durability for NeuralKV: every SET/DELETE is appended to a log
-and fsync'd before it's applied to memory, so an acknowledged write
-survives a crash. This is scoped to one node — no replication, no
-snapshots, no group commit. `term` exists in the record format only so
-the log doesn't need a format change when Raft (M8) starts using it.
+Durability for NeuralKV: every SET/DELETE is appended to a log and
+fsync'd before it's applied to memory, so an acknowledged write survives
+a crash. No snapshots, no group commit. `term` in the record format is
+what lets this same on-disk log double as Raft's replicated log (see
+raft-design.md's WAL integration section) without a separate format for
+single-node vs. clustered mode.
 
 ## Record format
 

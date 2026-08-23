@@ -62,7 +62,7 @@ storage regardless of any notion of leadership.
   `kWrongLeader` the same way it follows a write's. Pass
   `--allow-stale-reads` to `nkv-server` to skip both checks: every GET,
   on any node, reads local storage immediately, possibly stale on a
-  lagging follower — the old (pre-M9) behavior, useful when read latency
+  lagging follower — legacy stale-read mode, useful when read latency
   matters more than a currency guarantee.
 
 ## Client redirect

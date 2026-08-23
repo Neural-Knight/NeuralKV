@@ -123,7 +123,7 @@ confirmed this term" to skip the round entirely between heartbeats) —
 every GET pays one extra round trip to each peer. Correct, not fast;
 worth revisiting if read latency becomes the bottleneck.
 
-`--allow-stale-reads` on `nkv-server` reverts to the pre-M9 behavior:
+`--allow-stale-reads` on `nkv-server` reverts to legacy stale-read mode:
 every GET, on any node, reads local storage immediately with no quorum
 check — possibly stale on a lagging follower, but with no extra RPC cost
 on the leader either.

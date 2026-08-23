@@ -6,6 +6,7 @@ add_executable(neuralkv_unit_tests
   unit/wal_test.cpp
   unit/cluster_config_test.cpp
   unit/raft_rpc_codec_test.cpp
+  unit/fault_injection_test.cpp
 )
 
 target_link_libraries(neuralkv_unit_tests PRIVATE
@@ -33,6 +34,7 @@ add_executable(neuralkv_integration_tests
   integration/raft_stale_leader_test.cpp
   integration/raft_linearizable_read_test.cpp
   integration/raft_catchup_test.cpp
+  integration/raft_failure_integration_test.cpp
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -61,6 +63,8 @@ gtest_discover_tests(neuralkv_integration_tests)
 add_executable(neuralkv_raft_tests
   raft/raft_figure8_test.cpp
   raft/raft_fault_injection_test.cpp
+  raft/raft_failure_scenarios_test.cpp
+  raft/raft_linearizability_test.cpp
 )
 
 target_link_libraries(neuralkv_raft_tests PRIVATE

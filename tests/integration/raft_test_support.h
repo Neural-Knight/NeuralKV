@@ -7,8 +7,6 @@
 // NKV_CLIENT_PATH to be defined by the including test binary's build
 // target.
 
-#include <gtest/gtest.h>
-
 #include <cstdint>
 #include <cstdio>
 #include <csignal>
@@ -41,10 +39,17 @@ inline std::string WriteClusterConfig(const std::string& dir, uint32_t node_id,
   return path;
 }
 
-inline protocol::ClientResponse SendClientRequest(int fd, const protocol::ClientRequest& req) {
+// A closed connection or malformed frame is surfaced as a real Status
+// error rather than a default-constructed (and therefore falsely
+// kOk-looking — ClientResponse::status defaults to kOk) response, so a
+// caller racing a request against a deliberate server kill can tell "no
+// answer arrived" apart from "the server actually said OK".
+inline Result<protocol::ClientResponse> SendClientRequest(int fd, const protocol::ClientRequest& req) {
   std::vector<uint8_t> encoded;
-  EXPECT_TRUE(protocol::EncodeClientRequest(req, encoded).ok());
-  EXPECT_TRUE(net::WriteFull(fd, encoded.data(), encoded.size()).ok());
+  Status encode_status = protocol::EncodeClientRequest(req, encoded);
+  if (!encode_status.ok()) return encode_status;
+  Status write_status = net::WriteFull(fd, encoded.data(), encoded.size());
+  if (!write_status.ok()) return write_status;
 
   std::vector<uint8_t> buffer;
   uint8_t chunk[4096];
@@ -53,13 +58,11 @@ inline protocol::ClientResponse SendClientRequest(int fd, const protocol::Client
     const protocol::ParseResult result = protocol::TryParseFrame(buffer, nullptr, &resp);
     if (result == protocol::ParseResult::kComplete) return resp;
     if (result == protocol::ParseResult::kError) {
-      ADD_FAILURE() << "malformed response from server";
-      return resp;
+      return Status::Error(ErrorCode::kIOError, "malformed response from server");
     }
     const ssize_t n = ::read(fd, chunk, sizeof(chunk));
     if (n <= 0) {
-      ADD_FAILURE() << "connection closed before response received";
-      return resp;
+      return Status::Error(ErrorCode::kIOError, "connection closed before response received");
     }
     buffer.insert(buffer.end(), chunk, chunk + n);
   }

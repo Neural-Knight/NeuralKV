@@ -90,6 +90,17 @@ for how election, replication, commit/apply, and linearizable reads work,
 and [docs/cluster-config.md](docs/cluster-config.md) for the config file
 format and client redirect behavior.
 
+## Failure testing
+
+`./scripts/run_fault_tests.sh` builds if needed and runs just the
+fault-injection and failure-scenario test suites (leader crash, network
+partition, delayed RPCs, concurrent clients across a leader change,
+single-key linearizability under load) instead of the full suite — see
+[docs/failure-testing.md](docs/failure-testing.md) for the failure model
+this covers, what's in scope (in-process fault injection via
+`src/testing/fault_injection.h`) and what isn't (no `iptables`/network
+namespaces, no scripted fault schedules, no full Jepsen-style checker).
+
 ## Project Layout
 
 ```
@@ -102,8 +113,12 @@ src/persistence/  write-ahead log, crash recovery, durable storage engine
 src/cluster/      cluster config, node-to-node RPC transport
 src/raft/         Raft consensus: election, log replication, commit/apply
 src/server/       request handler, blocking and thread-pool TCP servers
+src/testing/      test-only fault injection and a linearizability checker;
+                  never linked into nkv-server
 tests/unit/       GoogleTest unit tests
 tests/integration/ end-to-end tests against a forked nkv-server subprocess
+tests/raft/       in-process Raft tests (real RaftNode/BlockingServer
+                  objects, no subprocess)
 benchmarks/       Google Benchmark micro-benchmarks
 tools/nkv-server/ standalone server binary
 tools/nkv-client/ one-shot CLI client (set/get/delete)
