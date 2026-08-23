@@ -15,3 +15,12 @@ target_link_libraries(storage_bench PRIVATE
 )
 
 neuralkv_set_warnings(storage_bench)
+
+add_executable(codec_bench codec_bench.cpp)
+
+target_link_libraries(codec_bench PRIVATE
+  neuralkv_protocol
+  benchmark::benchmark
+)
+
+neuralkv_set_warnings(codec_bench)

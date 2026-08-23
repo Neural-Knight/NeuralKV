@@ -42,6 +42,7 @@ inside an Ubuntu container:
 ```
 src/common/       core types shared across the project (Status, Result<T>, NodeConfig)
 src/storage/      sharded, thread-safe in-memory key-value store (ShardedKV)
+src/protocol/     binary wire protocol: frame codec, request/response types
 tests/unit/       GoogleTest unit tests
 benchmarks/       Google Benchmark micro-benchmarks
 tools/nkv-bench/  load-generator CLI (skeleton for now)

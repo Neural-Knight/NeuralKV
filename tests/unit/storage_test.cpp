@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <string>
 #include <thread>
 #include <vector>
@@ -98,24 +99,33 @@ TEST(ShardedKVTest, ConcurrentOperationsPreserveInvariants) {
   constexpr int kOpsPerThread = 10000;
 
   ShardedKV kv;
+  // gtest assertions aren't safe to call from worker threads; record
+  // failures here and assert on the main thread after joining.
+  std::atomic<bool> failure{false};
   std::vector<std::thread> workers;
   workers.reserve(kThreadCount);
 
   for (int t = 0; t < kThreadCount; ++t) {
-    workers.emplace_back([&kv, t]() {
+    workers.emplace_back([&kv, &failure, t]() {
       const std::string prefix = "t" + std::to_string(t) + ":";
       for (int i = 0; i < kOpsPerThread; ++i) {
         const std::string key = prefix + std::to_string(i);
-        ASSERT_TRUE(kv.Set(key, "v").ok());
+        if (!kv.Set(key, "v").ok()) {
+          failure = true;
+          continue;
+        }
         Result<std::string> get_result = kv.Get(key);
-        ASSERT_TRUE(get_result.ok());
-        EXPECT_EQ(get_result.value(), "v");
+        if (!get_result.ok() || get_result.value() != "v") {
+          failure = true;
+        }
       }
       // Delete the even-indexed keys so the post-join check below has a
       // mix of present and absent keys to verify per thread.
       for (int i = 0; i < kOpsPerThread; i += 2) {
         const std::string key = prefix + std::to_string(i);
-        ASSERT_TRUE(kv.Delete(key).ok());
+        if (!kv.Delete(key).ok()) {
+          failure = true;
+        }
       }
     });
   }
@@ -123,6 +133,8 @@ TEST(ShardedKVTest, ConcurrentOperationsPreserveInvariants) {
   for (std::thread& worker : workers) {
     worker.join();
   }
+
+  ASSERT_FALSE(failure.load()) << "invariant violation detected in a worker thread";
 
   for (int t = 0; t < kThreadCount; ++t) {
     const std::string prefix = "t" + std::to_string(t) + ":";
