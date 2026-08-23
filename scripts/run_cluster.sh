@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Starts a 3-node NeuralKV cluster on localhost: node 1 is the static
-# leader (writes to nodes 2/3 get rejected with WRONG_LEADER). Each node
-# gets its own generated config file — same peer list and leader_id, only
-# node_id differs — since the wire format bakes a node's own id into the
-# file it loads.
+# Starts a 3-node NeuralKV cluster on localhost. Leadership is elected by
+# Raft, not fixed — writes against whichever nodes aren't currently leader
+# get rejected with WRONG_LEADER and a hint naming the real one. Each node
+# gets its own generated config file — same peer list, only node_id
+# differs — since the wire format bakes a node's own id into the file it
+# loads.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build_dir="${NKV_BUILD_DIR:-$repo_root/build}"
@@ -31,7 +32,6 @@ for node_id in 1 2 3; do
 
   cat > "$conf" <<EOF
 node_id=$node_id
-leader_id=1
 peer 1 127.0.0.1 7401
 peer 2 127.0.0.1 7402
 peer 3 127.0.0.1 7403
@@ -48,9 +48,9 @@ printf '%s\n' "${pids[@]}" > "$cluster_dir/pids"
 sleep 0.5
 
 echo
-echo "leader: node 1 (127.0.0.1:7401)"
-echo "try:    nkv-client --port 7401 set foo bar   # leader accepts writes"
-echo "        nkv-client --port 7402 set foo bar   # follower: WRONG_LEADER"
+echo "leader is elected by Raft, not fixed — any node may hold it. try:"
+echo "  nkv-client --port 7401 --cluster-config $cluster_dir/cluster-1.conf set foo bar"
+echo "(a WRONG_LEADER hit on a follower auto-redirects and retries once)"
 echo
 echo "stop with: kill ${pids[*]}"
 echo "or:        kill \$(cat $cluster_dir/pids)"

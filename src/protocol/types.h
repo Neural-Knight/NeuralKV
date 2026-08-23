@@ -26,11 +26,13 @@ enum class ResponseStatus : uint16_t {
   kWrongLeader = 4,
 };
 
-// Internal node-to-node RPCs. Real payloads (log entries, votes) arrive
-// with Raft; for now only a liveness check.
+// Internal node-to-node RPCs. kPing/kPong are a liveness check; the Raft
+// opcodes carry an opaque body decoded by raft::rpc_codec.
 enum class ClusterOpcode : uint8_t {
   kPing = 1,
   kPong = 2,
+  kRequestVote = 3,
+  kAppendEntries = 4,
 };
 
 struct ClientRequest {

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -7,6 +8,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <sys/wait.h>
@@ -130,6 +132,28 @@ class ClusterTransportTest : public ::testing::Test {
     ::unlink(node2_conf_.c_str());
   }
 
+  // Raft (not the config's now-ignored leader_id) decides which of the
+  // two nodes is leader, so probe both with a real write until one
+  // accepts — that's the leader — instead of assuming it's node1.
+  uint16_t FindLeaderPort(std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+      for (uint16_t port : {node1_->port(), node2_->port()}) {
+        Result<int> conn = net::TcpConnect("127.0.0.1", port);
+        if (!conn.ok()) continue;
+        net::Fd fd(conn.value());
+        const protocol::ClientResponse resp = SendClientRequest(
+            fd.get(), protocol::ClientRequest{.request_id = 1,
+                                               .opcode = protocol::Opcode::kSet,
+                                               .key = "leader-probe",
+                                               .value = "x"});
+        if (resp.status == protocol::ResponseStatus::kOk) return port;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return 0;
+  }
+
   testutil::TempDataDir config_dir_;
   std::string node1_conf_;
   std::string node2_conf_;
@@ -138,12 +162,15 @@ class ClusterTransportTest : public ::testing::Test {
 };
 
 TEST_F(ClusterTransportTest, LeaderAcceptsSet) {
-  Result<int> conn = net::TcpConnect("127.0.0.1", node1_->port());
+  const uint16_t leader_port = FindLeaderPort(std::chrono::milliseconds(2000));
+  ASSERT_NE(leader_port, 0) << "no leader elected";
+
+  Result<int> conn = net::TcpConnect("127.0.0.1", leader_port);
   ASSERT_TRUE(conn.ok());
   net::Fd fd(conn.value());
 
   const protocol::ClientResponse resp = SendClientRequest(
-      fd.get(), protocol::ClientRequest{.request_id = 1,
+      fd.get(), protocol::ClientRequest{.request_id = 2,
                                          .opcode = protocol::Opcode::kSet,
                                          .key = "k1",
                                          .value = "v1"});
@@ -151,17 +178,21 @@ TEST_F(ClusterTransportTest, LeaderAcceptsSet) {
 }
 
 TEST_F(ClusterTransportTest, FollowerRejectsSetWithLeaderHint) {
-  Result<int> conn = net::TcpConnect("127.0.0.1", node2_->port());
+  const uint16_t leader_port = FindLeaderPort(std::chrono::milliseconds(2000));
+  ASSERT_NE(leader_port, 0) << "no leader elected";
+  const uint16_t follower_port = leader_port == node1_->port() ? node2_->port() : node1_->port();
+
+  Result<int> conn = net::TcpConnect("127.0.0.1", follower_port);
   ASSERT_TRUE(conn.ok());
   net::Fd fd(conn.value());
 
   const protocol::ClientResponse resp = SendClientRequest(
-      fd.get(), protocol::ClientRequest{.request_id = 1,
+      fd.get(), protocol::ClientRequest{.request_id = 3,
                                          .opcode = protocol::Opcode::kSet,
                                          .key = "k1",
                                          .value = "v1"});
   EXPECT_EQ(resp.status, protocol::ResponseStatus::kWrongLeader);
-  EXPECT_EQ(resp.leader_hint, 1u);
+  EXPECT_NE(resp.leader_hint, 0u);
 }
 
 TEST_F(ClusterTransportTest, ClusterPingGetsPongOnSamePort) {

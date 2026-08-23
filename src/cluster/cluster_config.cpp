@@ -62,15 +62,12 @@ Status Validate(const ClusterConfig& config) {
   if (config.local_node_id == 0) {
     return Status::Error(ErrorCode::kInvalidArgument, "cluster config missing node_id");
   }
-  if (config.leader_node_id == 0) {
-    return Status::Error(ErrorCode::kInvalidArgument, "cluster config missing leader_id");
-  }
   if (config.peers.empty()) {
     return Status::Error(ErrorCode::kInvalidArgument, "cluster config has no peers");
   }
 
   bool seen_local = false;
-  bool seen_leader = false;
+  bool seen_leader = config.leader_node_id == 0;
   for (std::size_t i = 0; i < config.peers.size(); ++i) {
     const PeerInfo& peer = config.peers[i];
     for (std::size_t j = i + 1; j < config.peers.size(); ++j) {

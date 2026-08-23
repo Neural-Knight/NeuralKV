@@ -111,6 +111,27 @@ target_compile_features(neuralkv_cluster PUBLIC cxx_std_20)
 
 neuralkv_set_warnings(neuralkv_cluster)
 
+add_library(neuralkv_raft
+  raft/rpc_codec.cpp
+  raft/log.cpp
+  raft/node.cpp
+)
+
+target_include_directories(neuralkv_raft PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(neuralkv_raft PUBLIC
+  neuralkv_common
+  neuralkv_protocol
+  neuralkv_persistence
+  neuralkv_cluster
+)
+
+target_compile_features(neuralkv_raft PUBLIC cxx_std_20)
+
+neuralkv_set_warnings(neuralkv_raft)
+
 add_library(neuralkv_server
   server/handler.cpp
   server/connection_session.cpp
@@ -129,6 +150,7 @@ target_link_libraries(neuralkv_server PUBLIC
   neuralkv_concurrency
   neuralkv_persistence
   neuralkv_cluster
+  neuralkv_raft
 )
 
 target_compile_features(neuralkv_server PUBLIC cxx_std_20)

@@ -97,23 +97,32 @@ Status WalWriter::OpenOrCreate() {
   return Status::Ok();
 }
 
-Status WalWriter::Append(WalRecord record) {
-  if (!open_status_.ok()) return open_status_;
+namespace {
 
-  record.term = 0;
-  record.index = last_index_ + 1;
-  std::vector<uint8_t> encoded;
-  EncodeWalRecord(record, encoded);
-
+Status WriteAll(int fd, const std::vector<uint8_t>& bytes) {
   std::size_t written = 0;
-  while (written < encoded.size()) {
-    const ssize_t n = ::write(fd_, encoded.data() + written, encoded.size() - written);
+  while (written < bytes.size()) {
+    const ssize_t n = ::write(fd, bytes.data() + written, bytes.size() - written);
     if (n < 0) {
       if (errno == EINTR) continue;
       return Status::Error(ErrorCode::kIOError, std::string("write wal: ") + std::strerror(errno));
     }
     written += static_cast<std::size_t>(n);
   }
+  return Status::Ok();
+}
+
+}  // namespace
+
+Status WalWriter::Append(WalRecord record) {
+  if (!open_status_.ok()) return open_status_;
+
+  record.index = last_index_ + 1;
+  std::vector<uint8_t> encoded;
+  EncodeWalRecord(record, encoded);
+
+  Status status = WriteAll(fd_, encoded);
+  if (!status.ok()) return status;
 
   last_index_ = record.index;
   return Status::Ok();
@@ -124,6 +133,30 @@ Status WalWriter::Sync() {
   if (::fsync(fd_) != 0) {
     return Status::Error(ErrorCode::kIOError, std::string("fsync wal: ") + std::strerror(errno));
   }
+  return Status::Ok();
+}
+
+Status WalWriter::RewriteAll(const std::vector<WalRecord>& records) {
+  if (!open_status_.ok()) return open_status_;
+
+  if (::ftruncate(fd_, 0) != 0) {
+    return Status::Error(ErrorCode::kIOError, std::string("ftruncate wal: ") + std::strerror(errno));
+  }
+  if (::lseek(fd_, 0, SEEK_SET) < 0) {
+    return Status::Error(ErrorCode::kIOError, std::string("lseek wal: ") + std::strerror(errno));
+  }
+
+  for (const WalRecord& record : records) {
+    std::vector<uint8_t> encoded;
+    EncodeWalRecord(record, encoded);
+    Status status = WriteAll(fd_, encoded);
+    if (!status.ok()) return status;
+  }
+
+  Status status = Sync();
+  if (!status.ok()) return status;
+
+  last_index_ = records.empty() ? 0 : records.back().index;
   return Status::Ok();
 }
 

@@ -5,11 +5,11 @@
 #include <cstdint>
 #include <string>
 
-#include "cluster/cluster_config.h"
 #include "common/status.h"
 #include "concurrency/thread_pool.h"
 #include "net/socket_utils.h"
 #include "persistence/durable_storage.h"
+#include "raft/node.h"
 #include "server/handler.h"
 
 namespace neuralkv {
@@ -20,7 +20,7 @@ namespace neuralkv {
 class ThreadPoolServer {
  public:
   ThreadPoolServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
-                    std::size_t num_workers, const cluster::ClusterConfig* cluster_config = nullptr);
+                    std::size_t num_workers, raft::RaftNode* raft = nullptr);
 
   // Accepts connections until Stop() is called (or a signal interrupts the
   // blocking accept()). Returns Ok() on a clean shutdown, or the error that

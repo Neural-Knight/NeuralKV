@@ -2,17 +2,20 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
 
 #include <signal.h>
 
 #include "cluster/cluster_config.h"
+#include "cluster/transport.h"
 #include "common/config.h"
 #include "common/result.h"
 #include "common/status.h"
 #include "net/epoll_server.h"
 #include "persistence/durable_storage.h"
+#include "raft/node.h"
 #include "server/blocking_server.h"
 #include "server/thread_pool_server.h"
 
@@ -37,7 +40,7 @@ void PrintUsage() {
                "  --io <mode>            blocking | threadpool | epoll (Linux only)\n"
                "                         default: blocking if --workers 1, else threadpool\n"
                "  --node-id <n>          This node's cluster id (required with --cluster-config)\n"
-               "  --cluster-config <path>  Static cluster membership + leader file\n"
+               "  --cluster-config <path>  Cluster membership file; enables Raft replication\n"
                "  --help                 Show this message\n";
 }
 
@@ -147,28 +150,53 @@ int main(int argc, char** argv) {
   }
   neuralkv::persistence::DurableStorage& storage = storage_result.value();
 
+  std::unique_ptr<neuralkv::cluster::ClusterTransport> transport;
+  std::unique_ptr<neuralkv::raft::RaftNode> raft_node;
+  if (cluster_config_ptr != nullptr) {
+    transport = std::make_unique<neuralkv::cluster::ClusterTransport>(node_id_flag);
+    raft_node = std::make_unique<neuralkv::raft::RaftNode>(node_id_flag, cluster_config,
+                                                             storage, *transport);
+    if (!raft_node->open_status().ok()) {
+      std::cerr << "failed to start raft: " << raft_node->open_status().message() << "\n";
+      return EXIT_FAILURE;
+    }
+    raft_node->Start();
+  }
+  neuralkv::raft::RaftNode* raft_ptr = raft_node.get();
+
   InstallShutdownHandlers();
 
   neuralkv::Status status = neuralkv::Status::Ok();
   if (io_mode == "blocking") {
-    neuralkv::BlockingServer server(config.host, config.port, storage, cluster_config_ptr);
-    g_stop_callback = [&server] { server.Stop(); };
+    neuralkv::BlockingServer server(config.host, config.port, storage, raft_ptr);
+    g_stop_callback = [&server, raft_ptr] {
+      if (raft_ptr != nullptr) raft_ptr->Stop();
+      server.Stop();
+    };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
   } else if (io_mode == "threadpool") {
     neuralkv::ThreadPoolServer server(config.host, config.port, storage,
-                                       static_cast<std::size_t>(workers), cluster_config_ptr);
-    g_stop_callback = [&server] { server.Stop(); };
+                                       static_cast<std::size_t>(workers), raft_ptr);
+    g_stop_callback = [&server, raft_ptr] {
+      if (raft_ptr != nullptr) raft_ptr->Stop();
+      server.Stop();
+    };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
   } else {
 #ifdef NEURALKV_LINUX
-    neuralkv::net::EpollServer server(config.host, config.port, storage, cluster_config_ptr);
-    g_stop_callback = [&server] { server.Stop(); };
+    neuralkv::net::EpollServer server(config.host, config.port, storage, raft_ptr);
+    g_stop_callback = [&server, raft_ptr] {
+      if (raft_ptr != nullptr) raft_ptr->Stop();
+      server.Stop();
+    };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
 #endif
   }
+
+  if (raft_node) raft_node->Stop();
 
   if (!status.ok()) {
     std::cerr << "server error: " << status.message() << "\n";

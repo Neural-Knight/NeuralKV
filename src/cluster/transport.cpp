@@ -29,27 +29,20 @@ Result<int> ClusterTransport::GetOrConnect(const PeerInfo& peer) {
 
 Result<protocol::ClusterResponse> ClusterTransport::SendRpc(const PeerInfo& peer,
                                                              const protocol::ClusterRequest& req) {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  auto it = peer_fds_.find(peer.node_id);
-  int fd;
-  if (it != peer_fds_.end()) {
-    fd = it->second;
-  } else {
-    Result<int> conn = net::TcpConnect(peer.host, peer.port);
-    if (!conn.ok()) return conn.status();
-    fd = conn.value();
-    peer_fds_.emplace(peer.node_id, fd);
-  }
+  Result<int> conn = net::TcpConnect(peer.host, peer.port);
+  if (!conn.ok()) return conn.status();
+  const int fd = conn.value();
 
   std::vector<uint8_t> encoded;
   Status status = protocol::EncodeClusterRequest(req, encoded);
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    net::CloseQuietly(fd);
+    return status;
+  }
 
   status = net::WriteFull(fd, encoded.data(), encoded.size());
   if (!status.ok()) {
     net::CloseQuietly(fd);
-    peer_fds_.erase(peer.node_id);
     return status;
   }
 
@@ -61,23 +54,20 @@ Result<protocol::ClusterResponse> ClusterTransport::SendRpc(const PeerInfo& peer
     const protocol::ParseResult result =
         protocol::TryParseFrame(buffer, nullptr, nullptr, nullptr, &resp, &frame_type);
     if (result == protocol::ParseResult::kComplete) {
+      net::CloseQuietly(fd);
       if (frame_type != protocol::MessageType::kClusterResponse) {
-        net::CloseQuietly(fd);
-        peer_fds_.erase(peer.node_id);
         return Status::Error(ErrorCode::kIOError, "peer sent a non-cluster-response frame");
       }
       return resp;
     }
     if (result == protocol::ParseResult::kError) {
       net::CloseQuietly(fd);
-      peer_fds_.erase(peer.node_id);
       return Status::Error(ErrorCode::kIOError, "malformed cluster response from peer");
     }
 
     const ssize_t n = ::read(fd, chunk, sizeof(chunk));
     if (n <= 0) {
       net::CloseQuietly(fd);
-      peer_fds_.erase(peer.node_id);
       return Status::Error(ErrorCode::kIOError, "connection closed while awaiting cluster response");
     }
     buffer.insert(buffer.end(), chunk, chunk + n);

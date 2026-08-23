@@ -91,6 +91,17 @@ peer 2 127.0.0.1 7402
   EXPECT_FALSE(LoadClusterConfig(file.path(), config).ok());
 }
 
+TEST(ClusterConfigTest, LeaderIdAbsentIsValid) {
+  TempConfigFile file(R"(
+node_id=1
+peer 1 127.0.0.1 7401
+peer 2 127.0.0.1 7402
+)");
+  ClusterConfig config;
+  ASSERT_TRUE(LoadClusterConfig(file.path(), config).ok());
+  EXPECT_EQ(config.leader_node_id, 0u);
+}
+
 TEST(ClusterConfigTest, LeaderNotInPeersReturnsError) {
   TempConfigFile file(R"(
 node_id=1

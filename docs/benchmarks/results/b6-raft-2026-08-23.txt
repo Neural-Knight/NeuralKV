@@ -1,0 +1,53 @@
+B6: 3-node Raft cluster vs. single-node B5, same workload.
+Docker (Ubuntu 24.04 container, Linux target build), --io threadpool
+--workers 8, --duration 30, --clients 8, --ratio 80 (matches the B5
+threadpool8/c8 configuration already on record, run fresh here in the
+same session for a same-environment comparison rather than citing the
+older number). Every SET on the cluster leader replicates through Raft
+(propose -> AppendEntries to both followers -> majority commit -> apply)
+before the client sees a response; the single-node run has no replication
+at all, just WAL append+fsync+apply.
+
+--- baseline: single node, threadpool (8 workers), 8 clients ---
+command: nkv-server --io threadpool --workers 8 --port 7720 --data-dir /tmp/b6/single
+command: nkv-bench --bench --host 127.0.0.1 --port 7720 --duration 30 --clients 8 --ratio 80 --label "B5 baseline threadpool8 c8"
+date: 2026-08-23
+total ops: 554459
+ops/sec:   18481.0
+p50 (us):  31
+p95 (us):  1948
+p99 (us):  2132
+
+--- B6: 3-node Raft cluster, writes against the elected leader ---
+node config (per node, only node_id differs):
+  node_id=<1|2|3>
+  peer 1 127.0.0.1 7721
+  peer 2 127.0.0.1 7722
+  peer 3 127.0.0.1 7723
+command (x3): nkv-server --io threadpool --workers 8 --port <7721|7722|7723> --node-id <id> --cluster-config cluster-<id>.conf --data-dir /tmp/b6/n<id>
+leader discovery: probed all three ports with `nkv-client set leader-probe x`
+until one returned OK (node 1 won this run, port 7721)
+command: nkv-bench --bench --host 127.0.0.1 --port 7721 --duration 30 --clients 8 --ratio 80 --label "B6 raft-leader threadpool8 c8"
+date: 2026-08-23
+total ops: 274263
+ops/sec:   9141.6
+p50 (us):  35
+p95 (us):  4045
+p99 (us):  5873
+
+--- comparison ---
+Throughput: 9,141.6 ops/sec vs. 18,481.0 ops/sec baseline — roughly 2.0x
+lower on the 3-node cluster for the identical 80/20 workload at the same
+concurrency. p50 barely moves (31us -> 35us: the GET-heavy 80% of the mix
+never touches Raft at all, so the median stays cheap), but p95 and p99
+both roughly double-to-triple (1948us -> 4045us, 2132us -> 5873us) — that
+tail is almost entirely the 20% SET traffic, and each of those SETs now
+pays for two AppendEntries round trips (to both followers) plus their
+fsync's, on top of the leader's own fsync, before the client sees a
+response. This matches the expected cost of majority-commit replication:
+a write's latency is now bounded by the slower of two followers rather
+than by this node's own disk alone.
+
+Not measured here (left for a fault-injection-focused stage): failover
+time under write load, and recovery/catch-up time for a node rejoining
+after being behind.

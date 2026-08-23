@@ -2,10 +2,7 @@
 
 NeuralKV is a distributed, in-memory key-value store built from scratch in
 C++20: custom binary TCP protocol, epoll-driven networking, write-ahead-log
-durability, and Raft-based replication across a 3-node cluster. This
-repository currently holds the project foundation — build system, core
-types, and test/benchmark infrastructure — with the networking and
-consensus layers built on top of it incrementally.
+durability, and Raft-based replication across a 3-node cluster.
 
 ## Prerequisites
 
@@ -63,14 +60,24 @@ append+sync+apply), throughput does not scale with `--workers` or
 connection count the way B2/B4's read-heavy numbers did — use
 `--label b5-wal` to tag the run.
 
-## Cluster (static leader, no consensus yet)
+B6 (3-node Raft) measures consensus overhead on top of B5: point
+nkv-bench at the elected leader of a Raft cluster (see below) instead of
+a single-node server, same command otherwise. Every SET now replicates
+to a majority before the client sees a response, so expect materially
+lower throughput and higher tail latency than a single node — see
+[docs/benchmarks/results/b6-raft-2026-08-23.txt](docs/benchmarks/results/b6-raft-2026-08-23.txt)
+for real numbers.
 
-`./scripts/run_cluster.sh` starts a 3-node cluster on localhost with a
-fixed leader (node 1). Writes against a follower come back as
-`WRONG_LEADER` with the leader's node id; `nkv-client --cluster-config
-<path>` follows that redirect automatically. See
+## Cluster (Raft-replicated)
+
+`./scripts/run_cluster.sh` starts a 3-node cluster on localhost. Raft
+elects the leader; writes against any other node come back as
+`WRONG_LEADER` with the current leader's node id, and `nkv-client
+--cluster-config <path>` follows that redirect automatically. Killing the
+leader triggers a new election — see [docs/raft-design.md](docs/raft-design.md)
+for how election, replication, and commit/apply work, and
 [docs/cluster-config.md](docs/cluster-config.md) for the config file
-format and exactly what is and isn't replicated before Raft (M8) lands.
+format and client redirect behavior.
 
 ## Project Layout
 
@@ -81,7 +88,8 @@ src/protocol/     binary wire protocol: frame codec, request/response types
 src/net/          POSIX socket RAII, blocking I/O helpers, connection state
                   machine, epoll event loop (Linux only)
 src/persistence/  write-ahead log, crash recovery, durable storage engine
-src/cluster/      static cluster config, node-to-node RPC transport
+src/cluster/      cluster config, node-to-node RPC transport
+src/raft/         Raft consensus: election, log replication, commit/apply
 src/server/       request handler, blocking and thread-pool TCP servers
 tests/unit/       GoogleTest unit tests
 tests/integration/ end-to-end tests against a forked nkv-server subprocess

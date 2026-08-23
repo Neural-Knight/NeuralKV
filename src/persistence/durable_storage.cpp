@@ -8,8 +8,7 @@
 namespace neuralkv::persistence {
 
 DurableStorage::DurableStorage(std::string data_dir) : data_dir_(data_dir), wal_(data_dir) {
-  uint64_t last_applied_index = 0;
-  recovery_status_ = RecoverFromWal(data_dir_, *kv_, &last_applied_index);
+  recovery_status_ = RecoverFromWal(data_dir_, *kv_, &last_applied_index_);
 }
 
 Result<DurableStorage> DurableStorage::Open(std::string data_dir) {
@@ -39,6 +38,7 @@ Status DurableStorage::Set(std::string_view key, std::string_view value) {
   if (!status.ok()) return status;
   status = wal_.Sync();
   if (!status.ok()) return status;
+  last_applied_index_ = wal_.last_index();
 
   return kv_->Set(key, value);
 }
@@ -60,8 +60,21 @@ Status DurableStorage::Delete(std::string_view key) {
   if (!status.ok()) return status;
   status = wal_.Sync();
   if (!status.ok()) return status;
+  last_applied_index_ = wal_.last_index();
 
   return kv_->Delete(key);
+}
+
+void DurableStorage::ApplyCommitted(const WalRecord& record) {
+  switch (record.op) {
+    case WalOp::kSet:
+      kv_->Set(record.key, record.value);
+      break;
+    case WalOp::kDelete:
+      kv_->Delete(record.key);
+      break;
+  }
+  last_applied_index_ = record.index;
 }
 
 }  // namespace neuralkv::persistence

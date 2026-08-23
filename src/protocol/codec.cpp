@@ -260,7 +260,7 @@ Status DecodeClusterRequest(std::span<const uint8_t> payload, ClusterRequest& ou
   const uint8_t opcode_byte = payload[offset];
   offset += 1;
   if (opcode_byte < static_cast<uint8_t>(ClusterOpcode::kPing) ||
-      opcode_byte > static_cast<uint8_t>(ClusterOpcode::kPong)) {
+      opcode_byte > static_cast<uint8_t>(ClusterOpcode::kAppendEntries)) {
     return Status::Error(ErrorCode::kInvalidArgument, "unknown cluster opcode");
   }
 

@@ -29,12 +29,24 @@ class DurableStorage {
   Result<std::string> Get(std::string_view key) const;
   Status Delete(std::string_view key);
 
+  // Applies an already-durable record (its WAL entry was written by
+  // Raft's log, not here) to the in-memory store and advances
+  // last_applied_index. Used only by the Raft apply path — single-node
+  // callers go through Set/Delete, which write their own WAL entries.
+  void ApplyCommitted(const WalRecord& record);
+
+  uint64_t last_applied_index() const { return last_applied_index_; }
+
+  const std::string& data_dir() const { return data_dir_; }
+  WalWriter& wal_writer() { return wal_; }
+
   ShardedKV& kv() { return *kv_; }
 
  private:
   std::string data_dir_;
   std::unique_ptr<ShardedKV> kv_ = std::make_unique<ShardedKV>();
   WalWriter wal_;
+  uint64_t last_applied_index_ = 0;
   Status recovery_status_ = Status::Ok();
   // Serializes the append-fsync-apply sequence across concurrent writers
   // (thread-pool workers). Held via unique_ptr so DurableStorage stays

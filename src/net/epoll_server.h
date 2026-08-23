@@ -10,11 +10,11 @@
 
 #include <sys/epoll.h>
 
-#include "cluster/cluster_config.h"
 #include "common/status.h"
 #include "net/connection.h"
 #include "net/socket_utils.h"
 #include "persistence/durable_storage.h"
+#include "raft/node.h"
 #include "server/handler.h"
 
 namespace neuralkv::net {
@@ -23,10 +23,13 @@ namespace neuralkv::net {
 // thread owns the whole connection table, so there's no locking around
 // per-connection state — DurableStorage underneath serializes its own
 // writes, and reads go straight to the already thread-safe ShardedKV.
+// With Raft active, RaftNode::Propose() blocks this one thread until the
+// write commits — the same fsync-serializes-everything tradeoff B5 already
+// carries here, just with a Raft round trip added to the wait.
 class EpollServer {
  public:
   EpollServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
-              const cluster::ClusterConfig* cluster_config = nullptr);
+              raft::RaftNode* raft = nullptr);
 
   // Runs the event loop until Stop() is called. Returns Ok() on a clean
   // shutdown, or the error that ended the loop early.
