@@ -1,21 +1,20 @@
 #pragma once
 
+#include "persistence/durable_storage.h"
 #include "protocol/types.h"
-#include "storage/sharded_kv.h"
 
 namespace neuralkv {
 
-// Applies a decoded client request to storage and builds the response.
-// Owns no state beyond the storage reference; safe to reuse across
-// connections since ShardedKV itself is thread-safe.
+// Applies a decoded client request to durable storage and builds the
+// response. Owns no state beyond the storage reference.
 class RequestHandler {
  public:
-  explicit RequestHandler(ShardedKV& kv);
+  explicit RequestHandler(persistence::DurableStorage& storage);
 
   protocol::ClientResponse Handle(const protocol::ClientRequest& req);
 
  private:
-  ShardedKV& kv_;
+  persistence::DurableStorage& storage_;
 };
 
 }  // namespace neuralkv

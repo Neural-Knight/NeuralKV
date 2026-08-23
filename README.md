@@ -53,6 +53,16 @@ nkv-bench command, `--workers 8` vs. `--io epoll` — and diff the printed
 throughput and percentiles. No numbers are published here; run it and read
 what your machine reports.
 
+B5 (write-ahead log) is on unconditionally as of this change — every SET
+and DELETE appends to the WAL and `fsync`s before it's applied, regardless
+of `--io` mode. To see the fsync cost, run the same nkv-bench command
+against a server from before this change and one after; the gap between
+them is B5's durability tax on top of B4. Because every write serializes
+through one `fsync` (`DurableStorage` holds a single lock around
+append+sync+apply), throughput does not scale with `--workers` or
+connection count the way B2/B4's read-heavy numbers did — use
+`--label b5-wal` to tag the run.
+
 ## Project Layout
 
 ```
@@ -61,6 +71,7 @@ src/storage/      sharded, thread-safe in-memory key-value store (ShardedKV)
 src/protocol/     binary wire protocol: frame codec, request/response types
 src/net/          POSIX socket RAII, blocking I/O helpers, connection state
                   machine, epoll event loop (Linux only)
+src/persistence/  write-ahead log, crash recovery, durable storage engine
 src/server/       request handler, blocking and thread-pool TCP servers
 tests/unit/       GoogleTest unit tests
 tests/integration/ end-to-end tests against a forked nkv-server subprocess

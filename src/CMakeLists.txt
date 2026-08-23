@@ -71,6 +71,27 @@ target_compile_features(neuralkv_concurrency PUBLIC cxx_std_20)
 
 neuralkv_set_warnings(neuralkv_concurrency)
 
+add_library(neuralkv_persistence
+  persistence/crc32.cpp
+  persistence/wal_record.cpp
+  persistence/wal_writer.cpp
+  persistence/recovery.cpp
+  persistence/durable_storage.cpp
+)
+
+target_include_directories(neuralkv_persistence PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(neuralkv_persistence PUBLIC
+  neuralkv_common
+  neuralkv_storage
+)
+
+target_compile_features(neuralkv_persistence PUBLIC cxx_std_20)
+
+neuralkv_set_warnings(neuralkv_persistence)
+
 add_library(neuralkv_server
   server/handler.cpp
   server/connection_session.cpp
@@ -87,6 +108,7 @@ target_link_libraries(neuralkv_server PUBLIC
   neuralkv_protocol
   neuralkv_net
   neuralkv_concurrency
+  neuralkv_persistence
 )
 
 target_compile_features(neuralkv_server PUBLIC cxx_std_20)

@@ -8,8 +8,8 @@
 #include "common/status.h"
 #include "concurrency/thread_pool.h"
 #include "net/socket_utils.h"
+#include "persistence/durable_storage.h"
 #include "server/handler.h"
-#include "storage/sharded_kv.h"
 
 namespace neuralkv {
 
@@ -18,7 +18,8 @@ namespace neuralkv {
 // during construction so port() is valid before Run() is called.
 class ThreadPoolServer {
  public:
-  ThreadPoolServer(std::string host, uint16_t port, ShardedKV& kv, std::size_t num_workers);
+  ThreadPoolServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
+                    std::size_t num_workers);
 
   // Accepts connections until Stop() is called (or a signal interrupts the
   // blocking accept()). Returns Ok() on a clean shutdown, or the error that

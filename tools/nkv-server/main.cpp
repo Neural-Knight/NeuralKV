@@ -8,11 +8,12 @@
 #include <signal.h>
 
 #include "common/config.h"
+#include "common/result.h"
 #include "common/status.h"
 #include "net/epoll_server.h"
+#include "persistence/durable_storage.h"
 #include "server/blocking_server.h"
 #include "server/thread_pool_server.h"
-#include "storage/sharded_kv.h"
 
 namespace {
 
@@ -28,12 +29,13 @@ void PrintUsage() {
   std::cout << "nkv-server - NeuralKV single-node server\n\n"
                "Usage: nkv-server [options]\n\n"
                "Options:\n"
-               "  --host <addr>    Listen address (default: 127.0.0.1)\n"
-               "  --port <n>       Listen port (default: 7400; 0 for ephemeral)\n"
-               "  --workers <n>    Worker threads (default: 1)\n"
-               "  --io <mode>      blocking | threadpool | epoll (Linux only)\n"
-               "                   default: blocking if --workers 1, else threadpool\n"
-               "  --help           Show this message\n";
+               "  --host <addr>     Listen address (default: 127.0.0.1)\n"
+               "  --port <n>        Listen port (default: 7400; 0 for ephemeral)\n"
+               "  --data-dir <path> WAL and data directory (default: ./data)\n"
+               "  --workers <n>     Worker threads (default: 1)\n"
+               "  --io <mode>       blocking | threadpool | epoll (Linux only)\n"
+               "                    default: blocking if --workers 1, else threadpool\n"
+               "  --help            Show this message\n";
 }
 
 std::string_view NextArg(int argc, char** argv, int& i, std::string_view flag_name) {
@@ -70,6 +72,8 @@ int main(int argc, char** argv) {
       config.host = std::string(NextArg(argc, argv, i, arg));
     } else if (arg == "--port") {
       config.port = static_cast<uint16_t>(std::stoi(std::string(NextArg(argc, argv, i, arg))));
+    } else if (arg == "--data-dir") {
+      config.data_dir = std::string(NextArg(argc, argv, i, arg));
     } else if (arg == "--workers") {
       workers = std::stoi(std::string(NextArg(argc, argv, i, arg)));
       workers_explicit = true;
@@ -104,24 +108,32 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  neuralkv::ShardedKV kv;
+  neuralkv::Result<neuralkv::persistence::DurableStorage> storage_result =
+      neuralkv::persistence::DurableStorage::Open(config.data_dir);
+  if (!storage_result.ok()) {
+    std::cerr << "failed to recover WAL in " << config.data_dir << ": "
+               << storage_result.status().message() << "\n";
+    return EXIT_FAILURE;
+  }
+  neuralkv::persistence::DurableStorage& storage = storage_result.value();
+
   InstallShutdownHandlers();
 
   neuralkv::Status status = neuralkv::Status::Ok();
   if (io_mode == "blocking") {
-    neuralkv::BlockingServer server(config.host, config.port, kv);
+    neuralkv::BlockingServer server(config.host, config.port, storage);
     g_stop_callback = [&server] { server.Stop(); };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
   } else if (io_mode == "threadpool") {
-    neuralkv::ThreadPoolServer server(config.host, config.port, kv,
+    neuralkv::ThreadPoolServer server(config.host, config.port, storage,
                                        static_cast<std::size_t>(workers));
     g_stop_callback = [&server] { server.Stop(); };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();
   } else {
 #ifdef NEURALKV_LINUX
-    neuralkv::net::EpollServer server(config.host, config.port, kv);
+    neuralkv::net::EpollServer server(config.host, config.port, storage);
     g_stop_callback = [&server] { server.Stop(); };
     std::cout << "listening " << config.host << ":" << server.port() << "\n" << std::flush;
     status = server.Run();

@@ -32,8 +32,8 @@ uint32_t WantedEvents(const Connection& conn) {
 
 }  // namespace
 
-EpollServer::EpollServer(std::string host, uint16_t port, ShardedKV& kv)
-    : host_(std::move(host)), port_(port), handler_(kv) {
+EpollServer::EpollServer(std::string host, uint16_t port, persistence::DurableStorage& storage)
+    : host_(std::move(host)), port_(port), handler_(storage) {
   Result<int> listen_result = TcpListen(host_, port_);
   if (!listen_result.ok()) {
     bind_status_ = listen_result.status();

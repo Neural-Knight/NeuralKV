@@ -26,7 +26,7 @@ protocol::ResponseStatus ToResponseStatus(ErrorCode code) {
 
 }  // namespace
 
-RequestHandler::RequestHandler(ShardedKV& kv) : kv_(kv) {}
+RequestHandler::RequestHandler(persistence::DurableStorage& storage) : storage_(storage) {}
 
 protocol::ClientResponse RequestHandler::Handle(const protocol::ClientRequest& req) {
   protocol::ClientResponse resp;
@@ -34,12 +34,12 @@ protocol::ClientResponse RequestHandler::Handle(const protocol::ClientRequest& r
 
   switch (req.opcode) {
     case protocol::Opcode::kSet: {
-      const Status status = kv_.Set(req.key, req.value);
+      const Status status = storage_.Set(req.key, req.value);
       resp.status = ToResponseStatus(status.code());
       break;
     }
     case protocol::Opcode::kGet: {
-      Result<std::string> result = kv_.Get(req.key);
+      Result<std::string> result = storage_.Get(req.key);
       if (result.ok()) {
         resp.status = protocol::ResponseStatus::kOk;
         resp.value = std::move(result).value();
@@ -49,7 +49,7 @@ protocol::ClientResponse RequestHandler::Handle(const protocol::ClientRequest& r
       break;
     }
     case protocol::Opcode::kDelete: {
-      const Status status = kv_.Delete(req.key);
+      const Status status = storage_.Delete(req.key);
       resp.status = ToResponseStatus(status.code());
       break;
     }

@@ -6,8 +6,8 @@
 
 #include "common/status.h"
 #include "net/socket_utils.h"
+#include "persistence/durable_storage.h"
 #include "server/handler.h"
-#include "storage/sharded_kv.h"
 
 namespace neuralkv {
 
@@ -15,7 +15,7 @@ namespace neuralkv {
 // during construction so port() is valid before Run() is called.
 class BlockingServer {
  public:
-  BlockingServer(std::string host, uint16_t port, ShardedKV& kv);
+  BlockingServer(std::string host, uint16_t port, persistence::DurableStorage& storage);
 
   // Serves connections until Stop() is called from another thread (or a
   // signal handler interrupts the blocking accept()). Returns Ok() on a

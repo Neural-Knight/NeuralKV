@@ -73,7 +73,7 @@ rerun on target hardware following the full procedure.
 | B2 | Thread-pool TCP | Concurrency vs. B1 | |
 | B3 | Sharded storage | Lock-contention reduction vs. B2 | |
 | B4 | Epoll event loop | Event-driven I/O vs. thread pool | |
-| B5 | + WAL fsync | Durability cost on top of B4 | |
+| B5 | + WAL fsync | Durability cost on top of B4 | Linux/Docker, 30s, 80/20 mix, WAL always on: epoll (1 thread) 8 clients 10,135 ops/sec (p50=52µs p95=3412µs p99=4118µs); thread-pool (8 workers) 8 clients 14,263 ops/sec (p50=30µs p95=3094µs p99=3826µs); thread-pool (64 workers) 64 clients 9,145 ops/sec (p50=35µs p95=18,273µs p99=21,416µs) — write throughput is capped by one fsync at a time regardless of thread count (DurableStorage serializes the whole log with one mutex), so more workers mainly buys headroom for concurrent GETs, not more concurrent SETs; tail latency grows with contention on that same lock. Raw: [b5-wal-2026-08-23.txt](benchmarks/results/b5-wal-2026-08-23.txt) |
 | B6 | 3-node Raft | Consensus overhead vs. single-node B5 | |
 
 ## Reproducibility

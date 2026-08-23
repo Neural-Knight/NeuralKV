@@ -13,18 +13,18 @@
 #include "common/status.h"
 #include "net/connection.h"
 #include "net/socket_utils.h"
+#include "persistence/durable_storage.h"
 #include "server/handler.h"
-#include "storage/sharded_kv.h"
 
 namespace neuralkv::net {
 
 // Single-threaded, edge-triggered epoll event loop (B4 baseline): one
 // thread owns the whole connection table, so there's no locking around
-// per-connection state — only ShardedKV underneath needs to be
-// thread-safe, and it already is.
+// per-connection state — DurableStorage underneath serializes its own
+// writes, and reads go straight to the already thread-safe ShardedKV.
 class EpollServer {
  public:
-  EpollServer(std::string host, uint16_t port, ShardedKV& kv);
+  EpollServer(std::string host, uint16_t port, persistence::DurableStorage& storage);
 
   // Runs the event loop until Stop() is called. Returns Ok() on a clean
   // shutdown, or the error that ended the loop early.

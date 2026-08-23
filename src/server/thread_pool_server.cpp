@@ -10,9 +10,9 @@
 
 namespace neuralkv {
 
-ThreadPoolServer::ThreadPoolServer(std::string host, uint16_t port, ShardedKV& kv,
-                                    std::size_t num_workers)
-    : host_(std::move(host)), port_(port), handler_(kv), pool_(num_workers) {
+ThreadPoolServer::ThreadPoolServer(std::string host, uint16_t port,
+                                    persistence::DurableStorage& storage, std::size_t num_workers)
+    : host_(std::move(host)), port_(port), handler_(storage), pool_(num_workers) {
   Result<int> listen_result = net::TcpListen(host_, port_);
   if (!listen_result.ok()) {
     bind_status_ = listen_result.status();
