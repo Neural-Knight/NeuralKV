@@ -1,10 +1,12 @@
 add_executable(neuralkv_unit_tests
   unit/smoke_test.cpp
   unit/status_test.cpp
+  unit/storage_test.cpp
 )
 
 target_link_libraries(neuralkv_unit_tests PRIVATE
   neuralkv_common
+  neuralkv_storage
   GTest::gtest
   GTest::gtest_main
 )
