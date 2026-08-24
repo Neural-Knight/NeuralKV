@@ -37,6 +37,7 @@ class TestServer {
     if (pid_ == 0) {
       ::close(pipe_fds[0]);
       ::dup2(pipe_fds[1], STDOUT_FILENO);
+      ::dup2(pipe_fds[1], STDERR_FILENO);
       ::close(pipe_fds[1]);
       const std::string workers_arg = std::to_string(workers);
       ::execl(NKV_SERVER_PATH, NKV_SERVER_PATH, "--port", "0", "--workers", workers_arg.c_str(),

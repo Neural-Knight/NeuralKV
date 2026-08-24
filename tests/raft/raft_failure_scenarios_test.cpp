@@ -195,12 +195,17 @@ TEST(RaftFailureScenariosTest, MajorityPartitionContinues) {
   ASSERT_TRUE(cluster.ProposeOn(static_cast<std::size_t>(leader), SetEntry("k1", "v1")).ok());
   ASSERT_TRUE(cluster.WaitForAppliedIndex(static_cast<std::size_t>(leader), 1, std::chrono::milliseconds(2000)));
 
-  // The isolated follower never had a chance to become leader (it can
-  // never reach a majority of votes with both peers unreachable), so it
-  // can't be a commit source for anything while cut off.
+  // The isolated follower can never reach a majority of votes with both
+  // peers unreachable, so it can't be a commit source for anything
+  // while cut off — Propose() on it must fail, and it must never reach
+  // kLeader. It *will* legitimately become a candidate once its own
+  // election timeout fires (that's expected — nothing tells it it's
+  // isolated), possibly cycling through repeated candidacies, so its
+  // exact state at any one instant isn't itself the invariant worth
+  // checking.
   const Status propose_on_isolated = cluster.ProposeOn(follower, SetEntry("k2", "v2"));
   EXPECT_FALSE(propose_on_isolated.ok());
-  EXPECT_EQ(cluster.Raft(follower).state(), RaftState::kFollower);
+  EXPECT_NE(cluster.Raft(follower).state(), RaftState::kLeader);
 
   cluster.HealAll();
   ASSERT_TRUE(cluster.WaitForAppliedIndex(follower, 1, std::chrono::milliseconds(2000)))
@@ -294,6 +299,16 @@ TEST(RaftFailureScenariosTest, LeaderFailoverDuringWrites) {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
   ASSERT_GE(new_leader, 0) << "no new leader elected after killing the leader mid-burst";
+
+  // A new leader can't directly advance commit_index_ over entries from
+  // a *previous* term just because a majority already has them (Raft's
+  // §5.4.2 safety rule — see raft-design.md's Commit and apply
+  // section); it only does so indirectly, once it commits a fresh entry
+  // in its own current term. Propose one now so every earlier entry
+  // still sitting in the log (possibly including the tail of this
+  // burst, if the old leader died before a post-commit heartbeat ever
+  // reached this node) actually gets applied before checking anything.
+  ASSERT_TRUE(cluster.ProposeOn(static_cast<std::size_t>(new_leader), SetEntry("flush", "flush")).ok());
 
   int ok_count = 0;
   for (int i = 0; i < kWriteCount; ++i) {

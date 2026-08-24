@@ -74,6 +74,21 @@ write. Median 289ms across 3 runs on Linux/Docker, comfortably inside
 Raft's randomized 250–400ms election timeout — see
 [docs/benchmarks/results/b9-failover-2026-08-24.txt](docs/benchmarks/results/b9-failover-2026-08-24.txt).
 
+B11 is a profile-driven optimization pass on top of B5/B6/B9: measuring
+found two real bottlenecks (the WAL's single fsync-per-write serializing
+every writer, and every Raft-leader GET paying a full quorum round trip)
+and fixed both. WAL group commit took single-node write-heavy throughput
+up 3.01x and turned the write path from "more concurrent clients doesn't
+help" into "actually scales with concurrency" (3.4x–3.65x at 8–32
+clients). Read-confirm amortization took Raft-leader read throughput up
+12.2x on a read-only workload and the standard 80/20 mix up 1.53x, with
+p50 down 20.6x, without weakening linearizability. See
+[docs/performance-notes.md](docs/performance-notes.md) for the
+methodology, what was measured, what was fixed, and one optimization
+(connection reuse) that was evaluated and deliberately not implemented,
+plus [docs/benchmarks/results](docs/benchmarks/results/) for every
+before/after number (`b11-*`).
+
 ## Cluster (Raft-replicated)
 
 `./scripts/run_cluster.sh` starts a 3-node cluster on localhost. Raft

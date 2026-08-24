@@ -1,5 +1,6 @@
 #pragma once
 
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -48,10 +49,17 @@ class DurableStorage {
   WalWriter wal_;
   uint64_t last_applied_index_ = 0;
   Status recovery_status_ = Status::Ok();
-  // Serializes the append-fsync-apply sequence across concurrent writers
-  // (thread-pool workers). Held via unique_ptr so DurableStorage stays
-  // movable — needed to return it from Open().
-  std::unique_ptr<std::mutex> write_mutex_ = std::make_unique<std::mutex>();
+  // WalWriter's own Sync() now batches concurrent callers' fsyncs
+  // (group commit), so Set/Delete no longer hold one lock across the
+  // whole append-fsync-apply sequence — that would serialize away the
+  // batching opportunity. This mutex/cv pair instead only orders the
+  // final apply-to-kv_ step: a record's apply must not happen before an
+  // earlier-indexed record's apply, even though their appends and
+  // fsyncs may complete out of order relative to each other. Held via
+  // unique_ptr so DurableStorage stays movable — needed to return it
+  // from Open().
+  std::unique_ptr<std::mutex> apply_mutex_ = std::make_unique<std::mutex>();
+  std::unique_ptr<std::condition_variable> apply_cv_ = std::make_unique<std::condition_variable>();
 };
 
 }  // namespace neuralkv::persistence

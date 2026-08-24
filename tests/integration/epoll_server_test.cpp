@@ -35,6 +35,7 @@ class TestServer {
     if (pid_ == 0) {
       ::close(pipe_fds[0]);
       ::dup2(pipe_fds[1], STDOUT_FILENO);
+      ::dup2(pipe_fds[1], STDERR_FILENO);
       ::close(pipe_fds[1]);
       ::execl(NKV_SERVER_PATH, NKV_SERVER_PATH, "--port", "0", "--io", "epoll", "--data-dir",
               data_dir_.path().c_str(), nullptr);

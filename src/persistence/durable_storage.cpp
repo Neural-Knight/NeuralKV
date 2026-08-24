@@ -27,20 +27,31 @@ Status DurableStorage::Set(std::string_view key, std::string_view value) {
     return Status::Error(ErrorCode::kInvalidArgument, "SET requires a non-empty value");
   }
 
-  std::lock_guard<std::mutex> lock(*write_mutex_);
-
   WalRecord record;
   record.op = WalOp::kSet;
   record.key = std::string(key);
   record.value = std::string(value);
 
-  Status status = wal_.Append(std::move(record));
-  if (!status.ok()) return status;
-  status = wal_.Sync();
-  if (!status.ok()) return status;
-  last_applied_index_ = wal_.last_index();
+  Result<uint64_t> appended = wal_.Append(std::move(record));
+  if (!appended.ok()) return appended.status();
+  const uint64_t index = appended.value();
 
-  return kv_->Set(key, value);
+  Status status = wal_.Sync(index);
+  if (!status.ok()) return status;
+
+  // Group commit lets Append/Sync complete out of order across threads;
+  // apply order must still match WAL order for single-node semantics to
+  // hold, so wait for every earlier record to be applied first.
+  Status set_status = Status::Ok();
+  {
+    std::unique_lock<std::mutex> lock(*apply_mutex_);
+    apply_cv_->wait(lock, [&] { return last_applied_index_ == index - 1; });
+    set_status = kv_->Set(key, value);
+    last_applied_index_ = index;
+  }
+  apply_cv_->notify_all();
+
+  return set_status;
 }
 
 Result<std::string> DurableStorage::Get(std::string_view key) const { return kv_->Get(key); }
@@ -50,19 +61,27 @@ Status DurableStorage::Delete(std::string_view key) {
     return Status::Error(ErrorCode::kInvalidArgument, "key must not be empty");
   }
 
-  std::lock_guard<std::mutex> lock(*write_mutex_);
-
   WalRecord record;
   record.op = WalOp::kDelete;
   record.key = std::string(key);
 
-  Status status = wal_.Append(std::move(record));
-  if (!status.ok()) return status;
-  status = wal_.Sync();
-  if (!status.ok()) return status;
-  last_applied_index_ = wal_.last_index();
+  Result<uint64_t> appended = wal_.Append(std::move(record));
+  if (!appended.ok()) return appended.status();
+  const uint64_t index = appended.value();
 
-  return kv_->Delete(key);
+  Status status = wal_.Sync(index);
+  if (!status.ok()) return status;
+
+  Status delete_status = Status::Ok();
+  {
+    std::unique_lock<std::mutex> lock(*apply_mutex_);
+    apply_cv_->wait(lock, [&] { return last_applied_index_ == index - 1; });
+    delete_status = kv_->Delete(key);
+    last_applied_index_ = index;
+  }
+  apply_cv_->notify_all();
+
+  return delete_status;
 }
 
 void DurableStorage::ApplyCommitted(const WalRecord& record) {

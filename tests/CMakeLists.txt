@@ -7,6 +7,7 @@ add_executable(neuralkv_unit_tests
   unit/cluster_config_test.cpp
   unit/raft_rpc_codec_test.cpp
   unit/fault_injection_test.cpp
+  unit/group_commit_test.cpp
 )
 
 target_link_libraries(neuralkv_unit_tests PRIVATE
@@ -65,6 +66,7 @@ add_executable(neuralkv_raft_tests
   raft/raft_fault_injection_test.cpp
   raft/raft_failure_scenarios_test.cpp
   raft/raft_linearizability_test.cpp
+  raft/raft_read_optimization_test.cpp
 )
 
 target_link_libraries(neuralkv_raft_tests PRIVATE

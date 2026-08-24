@@ -54,8 +54,9 @@ TEST(WalTest, AppendAndSyncWritesCrcValidRecord) {
   record.op = WalOp::kSet;
   record.key = "k1";
   record.value = "v1";
-  ASSERT_TRUE(writer.Append(record).ok());
-  ASSERT_TRUE(writer.Sync().ok());
+  Result<uint64_t> appended = writer.Append(record);
+  ASSERT_TRUE(appended.ok());
+  ASSERT_TRUE(writer.Sync(appended.value()).ok());
 
   const int fd = ::open(writer.wal_path().c_str(), O_RDONLY);
   ASSERT_GE(fd, 0);
@@ -92,8 +93,9 @@ TEST(WalTest, RecoverReplaysSetAndDeleteInOrder) {
     WalRecord del1;
     del1.op = WalOp::kDelete;
     del1.key = "k1";
-    ASSERT_TRUE(writer.Append(del1).ok());
-    ASSERT_TRUE(writer.Sync().ok());
+    Result<uint64_t> appended = writer.Append(del1);
+    ASSERT_TRUE(appended.ok());
+    ASSERT_TRUE(writer.Sync(appended.value()).ok());
   }
 
   ShardedKV kv;
@@ -115,8 +117,9 @@ TEST(WalTest, RecoverIgnoresTruncatedTailRecord) {
     set1.op = WalOp::kSet;
     set1.key = "k1";
     set1.value = "v1";
-    ASSERT_TRUE(writer.Append(set1).ok());
-    ASSERT_TRUE(writer.Sync().ok());
+    Result<uint64_t> appended = writer.Append(set1);
+    ASSERT_TRUE(appended.ok());
+    ASSERT_TRUE(writer.Sync(appended.value()).ok());
   }
 
   // Simulate a crash mid-write: a full valid record followed by a few
@@ -143,8 +146,9 @@ TEST(WalTest, RecoverDetectsCrcCorruption) {
     set1.op = WalOp::kSet;
     set1.key = "k1";
     set1.value = "v1";
-    ASSERT_TRUE(writer.Append(set1).ok());
-    ASSERT_TRUE(writer.Sync().ok());
+    Result<uint64_t> appended = writer.Append(set1);
+    ASSERT_TRUE(appended.ok());
+    ASSERT_TRUE(writer.Sync(appended.value()).ok());
   }
 
   // Flip a bit in the key bytes (offset 25: after the 25-byte fixed

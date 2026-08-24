@@ -51,12 +51,14 @@ Status Log::Append(LogEntry& entry) {
   record.key = entry.key;
   record.value = entry.value;
 
-  Status status = wal_writer_.Append(record);
-  if (!status.ok()) return status;
-  status = wal_writer_.Sync();
+  Result<uint64_t> appended = wal_writer_.Append(record);
+  if (!appended.ok()) return appended.status();
+  const uint64_t index = appended.value();
+
+  Status status = wal_writer_.Sync(index);
   if (!status.ok()) return status;
 
-  entry.index = wal_writer_.last_index();
+  entry.index = index;
   entries_.push_back(entry);
   return Status::Ok();
 }

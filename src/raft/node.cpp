@@ -182,6 +182,7 @@ void RaftNode::BecomeFollowerLocked(uint64_t term) {
   voted_for_ = 0;
   state_ = RaftState::kFollower;
   leader_id_ = 0;
+  last_ack_time_.clear();
   PersistStateLocked();
   ResetElectionDeadlineLocked();
 }
@@ -191,12 +192,27 @@ void RaftNode::BecomeLeaderLocked() {
   leader_id_ = local_node_id_;
   next_index_.clear();
   match_index_.clear();
+  last_ack_time_.clear();
   for (const cluster::PeerInfo& peer : config_.peers) {
     if (peer.node_id == local_node_id_) continue;
     next_index_[peer.node_id] = log_.LastIndex() + 1;
     match_index_[peer.node_id] = 0;
   }
   next_heartbeat_ = std::chrono::steady_clock::now();  // send the first round immediately
+}
+
+// Majority of peers (plus this node itself) acked within the last
+// heartbeat interval, at the current term — cheap enough to call from
+// every GET, since it's just scanning an already-maintained map.
+bool RaftNode::HasRecentMajorityContactLocked() const {
+  if (state_ != RaftState::kLeader) return false;
+  const auto now = std::chrono::steady_clock::now();
+  int contacted = 1;  // self
+  for (const auto& [node_id, when] : last_ack_time_) {
+    if (now - when <= kHeartbeatInterval) ++contacted;
+  }
+  const int majority = static_cast<int>(config_.peers.size()) / 2 + 1;
+  return contacted >= majority;
 }
 
 void RaftNode::ApplyCommittedEntriesLocked() {
@@ -328,6 +344,10 @@ bool RaftNode::ConfirmLeadershipQuorum() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (state_ != RaftState::kLeader) return false;
+    // Amortization: ordinary heartbeats already prove liveness every
+    // kHeartbeatInterval; skip this round's RPCs entirely if that proof
+    // is still fresh rather than re-doing it on every single GET.
+    if (HasRecentMajorityContactLocked()) return true;
     term = current_term_;
     peers = config_.peers;
   }
@@ -377,7 +397,10 @@ bool RaftNode::ConfirmLeadershipQuorum() {
       return false;
     }
     if (state_ != RaftState::kLeader || current_term_ != term) return false;
-    if (resp.success) ++acks;
+    if (resp.success) {
+      ++acks;
+      last_ack_time_[peer.node_id] = std::chrono::steady_clock::now();
+    }
   }
 
   return acks >= majority;
@@ -447,6 +470,7 @@ void RaftNode::ReplicateToPeer(const cluster::PeerInfo& peer) {
   }
 
   if (resp.success) {
+    last_ack_time_[peer.node_id] = std::chrono::steady_clock::now();
     if (!entries.empty()) {
       match_index_[peer.node_id] = entries.back().index;
       next_index_[peer.node_id] = entries.back().index + 1;

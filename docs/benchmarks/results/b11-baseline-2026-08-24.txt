@@ -1,0 +1,91 @@
+B11 baseline: single-node vs. 3-node Raft leader, before any optimization
+work in this pass. Docker (Ubuntu 24.04 container, Linux target build),
+--io threadpool --workers 8, --clients 8 throughout unless noted.
+
+command (build): cmake -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+                 && cmake --build build-linux
+date: 2026-08-24
+
+--- single-node, write-heavy (ratio 20 = 20% GET / 80% SET) ---
+command: nkv-server --io threadpool --workers 8 --port 18820 --data-dir /tmp/b11_single
+command: nkv-bench --bench --host 127.0.0.1 --port 18820 --duration 30 --clients 8 --ratio 20 --label b11-baseline-single-write20
+total ops: 137104
+ops/sec:   4569.85
+p50 (us):  1848
+p95 (us):  2677
+p99 (us):  4294
+
+--- single-node, read-only (ratio 100) ---
+command: nkv-bench --bench --host 127.0.0.1 --port 18821 --duration 15 --clients 8 --ratio 100 --label b11-baseline-single-read100
+total ops: 2981299
+ops/sec:   198751
+p50 (us):  27
+p95 (us):  92
+p99 (us):  126
+
+--- 3-node Raft cluster, leader, write-heavy (ratio 20) ---
+node config: 3 nodes, threadpool 8 workers each, ports 18831-18833
+leader discovery: probed all three with `nkv-client set leader-probe x` until one returned OK (node 1 this run)
+command: nkv-bench --bench --host 127.0.0.1 --port 18831 --duration 30 --clients 8 --ratio 20 --label b11-baseline-raft-write20
+total ops: 66298
+ops/sec:   2209.81
+p50 (us):  3015
+p95 (us):  6012
+p99 (us):  7557
+
+--- 3-node Raft cluster, leader, read-only (ratio 100) ---
+command: nkv-bench --bench --host 127.0.0.1 --port 18831 --duration 15 --clients 8 --ratio 100 --label b11-baseline-raft-read100
+total ops: 181535
+ops/sec:   12102.1
+p50 (us):  248
+p95 (us):  2657
+p99 (us):  4158
+
+--- write-path scaling check (ratio 0 = 100% SET), same single-node server, varying client count ---
+command: nkv-bench --bench --host 127.0.0.1 --port 18840 --duration 15 --clients <1|8|32> --ratio 0
+clients=1:  ops/sec 3547.48, p50 233us,  p95 278us,   p99 2379us
+clients=8:  ops/sec 3143.24, p50 1869us, p95 4179us,  p99 4576us
+clients=32: ops/sec 2485.42, p50 1835us, p95 3859us,  p99 4470us
+
+--- analysis: two bottlenecks confirmed by measurement, not guesswork ---
+
+1. DurableStorage's single write_mutex_ fully serializes WAL
+   append+fsync+apply, and fsync dominates. The scaling check above is
+   the direct evidence: pure-SET throughput does not increase with
+   client count — it's flat-to-declining (3547 -> 3143 -> 2485 ops/sec
+   from 1 to 32 clients), while p50 latency jumps 8x the moment there's
+   more than one concurrent writer (233us -> 1869us) and then stays
+   flat. That's the signature of N clients queuing behind one lock that
+   can only do one fsync at a time: more concurrency doesn't buy more
+   throughput, it just buys more waiting. The write-heavy single-node
+   run (80% SET) reflects this directly: p50 of 1848us is almost
+   entirely fsync-queue wait, not actual work.
+
+2. RaftNode::ConfirmLeadershipQuorum() sends a full empty-AppendEntries
+   round trip to every peer on every single GET, even with zero write
+   load. The read-only (ratio 100) comparison isolates this cleanly:
+   single-node GET does 198,751 ops/sec at p50=27us; the exact same
+   pure-GET workload against a Raft leader does 12,102 ops/sec at
+   p50=248us — a 16.4x throughput drop and 9.2x p50 increase for a
+   workload that touches zero disk I/O and involves no replication of
+   anything. p95/p99 on the Raft leader (2657us/4158us) are worse than
+   even the *write-heavy* single-node run's tail, meaning an occasional
+   slow quorum round can cost more than an fsync does. This is pure
+   avoidable network round-trip cost: the leader already knows it was
+   leader a moment ago and nothing requires re-proving that on every
+   single read.
+
+Both are addressed in this pass: group commit (B) for #1, quorum-check
+amortization (C) for #2. See docs/performance-notes.md for the full
+writeup and docs/benchmarks/results/b11-group-commit-2026-08-24.txt /
+b11-read-confirm-2026-08-24.txt for before/after numbers.
+
+--- methodology note ---
+No sampling profiler (perf, etc.) is available in this container without
+elevated privileges Docker doesn't grant by default here, so bottleneck
+identification is via targeted comparative benchmarking instead: hold
+everything constant except the one variable under suspicion (client
+count for the mutex-serialization check; single-node vs. Raft leader for
+the quorum-round-trip check) and measure the delta directly. Both deltas
+above are large enough (multi-x, not noise) that they don't need finer
+instrumentation to be conclusive.

@@ -1,5 +1,6 @@
 #include "persistence/wal_writer.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <utility>
@@ -50,7 +51,12 @@ WalWriter::WalWriter(WalWriter&& other) noexcept
       fd_(other.fd_),
       wal_path_(std::move(other.wal_path_)),
       last_index_(other.last_index_),
-      open_status_(std::move(other.open_status_)) {
+      open_status_(std::move(other.open_status_)),
+      mutex_(std::move(other.mutex_)),
+      cv_(std::move(other.cv_)),
+      synced_index_(other.synced_index_),
+      flush_in_progress_(other.flush_in_progress_),
+      fsync_count_(other.fsync_count_) {
   other.fd_ = -1;
 }
 
@@ -62,6 +68,11 @@ WalWriter& WalWriter::operator=(WalWriter&& other) noexcept {
   wal_path_ = std::move(other.wal_path_);
   last_index_ = other.last_index_;
   open_status_ = std::move(other.open_status_);
+  mutex_ = std::move(other.mutex_);
+  cv_ = std::move(other.cv_);
+  synced_index_ = other.synced_index_;
+  flush_in_progress_ = other.flush_in_progress_;
+  fsync_count_ = other.fsync_count_;
   other.fd_ = -1;
   return *this;
 }
@@ -94,6 +105,7 @@ Status WalWriter::OpenOrCreate() {
     if (!has_record) break;
     last_index_ = record.index;
   }
+  synced_index_ = last_index_;  // everything on disk at open time is already durable
   return Status::Ok();
 }
 
@@ -114,7 +126,8 @@ Status WriteAll(int fd, const std::vector<uint8_t>& bytes) {
 
 }  // namespace
 
-Status WalWriter::Append(WalRecord record) {
+Result<uint64_t> WalWriter::Append(WalRecord record) {
+  std::lock_guard<std::mutex> lock(*mutex_);
   if (!open_status_.ok()) return open_status_;
 
   record.index = last_index_ + 1;
@@ -125,18 +138,67 @@ Status WalWriter::Append(WalRecord record) {
   if (!status.ok()) return status;
 
   last_index_ = record.index;
-  return Status::Ok();
+  cv_->notify_all();  // wake anyone group-committing, so they can re-check their batch cap
+  return last_index_;
 }
 
-Status WalWriter::Sync() {
-  if (!open_status_.ok()) return open_status_;
+Status WalWriter::FsyncNow() {
   if (::fsync(fd_) != 0) {
     return Status::Error(ErrorCode::kIOError, std::string("fsync wal: ") + std::strerror(errno));
   }
+  ++fsync_count_;
   return Status::Ok();
 }
 
+Status WalWriter::Sync(uint64_t at_least_index) {
+  std::unique_lock<std::mutex> lock(*mutex_);
+  if (!open_status_.ok()) return open_status_;
+
+  if (synced_index_ >= at_least_index) return Status::Ok();  // a prior flush already covered this
+
+  if (flush_in_progress_) {
+    // Someone else is already the batch leader; wait for their flush
+    // (or a later one) to cover our index too.
+    cv_->wait(lock, [&] { return synced_index_ >= at_least_index || !flush_in_progress_; });
+    if (synced_index_ >= at_least_index) return Status::Ok();
+    // The flush we were waiting on finished without covering us (can
+    // only happen if this WalWriter's open_status_ turned bad
+    // mid-flush); fall through and become the leader for our own index.
+  }
+
+  // We're the batch leader: wait for more concurrent appends to arrive,
+  // up to the record cap or the delay cap, then fsync everything
+  // that's accumulated in one call. The wait is adaptive rather than a
+  // flat sleep to the delay cap: it polls in short quiet-ticks and
+  // stops as soon as nothing new has arrived for a full tick, so a
+  // solo, uncontended Append+Sync (the common case for Raft's own
+  // per-node log, which is already fully serialized by RaftNode's own
+  // mutex and so never actually has anything to batch with) pays a
+  // small bounded delay instead of always waiting out the full cap.
+  flush_in_progress_ = true;
+  const auto deadline = std::chrono::steady_clock::now() + kGroupCommitMaxDelay;
+  uint64_t observed_index = last_index_;
+  while (static_cast<int>(last_index_ - synced_index_) < kGroupCommitMaxRecords) {
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= deadline) break;
+    cv_->wait_until(lock, std::min(deadline, now + kGroupCommitQuietTick));
+    if (last_index_ == observed_index) break;  // quiet: nothing new arrived this tick
+    observed_index = last_index_;
+  }
+
+  const Status status = FsyncNow();
+  if (status.ok()) {
+    synced_index_ = last_index_;
+  }
+  flush_in_progress_ = false;
+  cv_->notify_all();
+
+  if (!status.ok()) return status;
+  return synced_index_ >= at_least_index ? Status::Ok() : status;
+}
+
 Status WalWriter::RewriteAll(const std::vector<WalRecord>& records) {
+  std::lock_guard<std::mutex> lock(*mutex_);
   if (!open_status_.ok()) return open_status_;
 
   if (::ftruncate(fd_, 0) != 0) {
@@ -153,11 +215,18 @@ Status WalWriter::RewriteAll(const std::vector<WalRecord>& records) {
     if (!status.ok()) return status;
   }
 
-  Status status = Sync();
+  Status status = FsyncNow();
   if (!status.ok()) return status;
 
   last_index_ = records.empty() ? 0 : records.back().index;
+  synced_index_ = last_index_;
+  cv_->notify_all();
   return Status::Ok();
+}
+
+uint64_t WalWriter::last_index() const {
+  std::lock_guard<std::mutex> lock(*mutex_);
+  return last_index_;
 }
 
 }  // namespace neuralkv::persistence

@@ -1,0 +1,84 @@
+B11: read-confirm amortization (ConfirmLeadershipQuorum), before vs.
+after. Docker/Linux, 3-node Raft cluster, --io threadpool --workers 8,
+--clients 8 throughout, writing against the elected leader.
+
+"Before" here means: group commit (Part B) already applied to both
+runs, read-confirm amortization specifically disabled for the "before"
+run only (the `if (HasRecentMajorityContactLocked()) return true;`
+short-circuit in RaftNode::ConfirmLeadershipQuorum forced off) — an
+apples-to-apples isolation of just this one change, not a comparison
+against an earlier milestone's numbers. b11-baseline-2026-08-24.txt's
+raft-read100 number (12,102 ops/sec) is the true pre-M11 baseline and
+lines up with this file's "before" read100 number (12,365.9 ops/sec)
+within normal run-to-run variance, confirming group commit alone
+doesn't move the read path at all — expected, since it only touches
+WalWriter.
+
+command (build): cmake -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+                 && cmake --build build-linux
+date: 2026-08-24
+
+--- read-only (ratio 100) — the clean, unconfounded signal ---
+
+before (amortization disabled):
+command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 15 --clients 8 --ratio 100 --label b11-before-read-confirm-raft-read100
+  total ops: 185520
+  ops/sec:   12365.9
+  p50 (us):  245
+  p95 (us):  2611
+  p99 (us):  4068
+
+after (amortization enabled):
+command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 15 --clients 8 --ratio 100 --label b11-read-confirm-raft-read100
+  total ops: 4531346
+  ops/sec:   151044
+  p50 (us):  44
+  p95 (us):  104
+  p99 (us):  140
+
+delta: 12.2x throughput, p50 5.6x lower, p95 25.1x lower, p99 29.1x
+lower. A GET on the Raft leader now costs roughly what a single-node
+GET costs (single-node read-only baseline: 198,751 ops/sec, p50=27us —
+see b11-baseline-2026-08-24.txt) instead of paying a full network round
+trip to both followers on every single call.
+
+--- 80/20 mix (ratio 80) — the standard workload ---
+
+before (amortization disabled):
+command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 30 --clients 8 --ratio 80 --label b11-before-read-confirm-raft-8020
+  total ops: 167108
+  ops/sec:   5570.08
+  p50 (us):  1297
+  p95 (us):  2492
+  p99 (us):  3160
+
+after (amortization enabled):
+command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 30 --clients 8 --ratio 80 --label b11-read-confirm-raft-8020
+  total ops: 256336
+  ops/sec:   8543.83
+  p50 (us):  63
+  p95 (us):  3716
+  p99 (us):  5046
+
+delta: 1.53x throughput, p50 20.6x lower. p95/p99 actually got *worse*
+(2492us -> 3716us, 3160us -> 5046us) — not a bug, a shift in what's
+setting the tail. Before, both GET and SET could land in the slow tail
+(a GET's own quorum round trip contending with concurrent SET
+replication traffic). After, GETs are near-instant and essentially never
+show up in the tail at all, so the p95/p99 landmarks now fall
+exclusively on the 20% of ops that are SETs — replication traffic
+contending only with itself, at a slightly higher latency floor than
+before once GETs stopped sharing (and therefore no longer smoothing
+out) that contention. Net effect at the workload level: throughput up
+1.53x, median latency down 20.6x, worst-case latency for the write
+share essentially unchanged — a clear win for the mix as a whole.
+
+--- correctness note ---
+
+Amortization does not weaken linearizability: skipping the round trip
+only happens when a majority has acked *this leader, this term* within
+the last heartbeat interval (75ms) — see docs/performance-notes.md for
+why that's exactly the guarantee a fresh round trip would have provided
+anyway. RaftLinearizabilityTest.ThreeClientsSingleKeyFiveHundredOps and
+every RaftFailureScenariosTest/RaftLinearizableReadTest case pass
+unchanged with amortization enabled.

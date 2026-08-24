@@ -88,6 +88,7 @@ class RaftNode {
   void RunLoop();
   void StartElection();
   void ReplicateToPeer(const cluster::PeerInfo& peer);
+  bool HasRecentMajorityContactLocked() const;
   void AdvanceCommitIndexLocked();
   void ApplyCommittedEntriesLocked();
   void BecomeFollowerLocked(uint64_t term);
@@ -116,6 +117,13 @@ class RaftNode {
   std::chrono::steady_clock::time_point next_heartbeat_;
   std::unordered_map<uint32_t, uint64_t> next_index_;
   std::unordered_map<uint32_t, uint64_t> match_index_;
+  // Last time each peer acked any AppendEntries (heartbeat or otherwise)
+  // in the current term — cleared on every leadership/term change, so a
+  // stale entry can never survive across one. Read-confirm amortization
+  // (ConfirmLeadershipQuorum) uses this to skip its own round trip when
+  // ordinary heartbeats already established live majority contact
+  // recently enough.
+  std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> last_ack_time_;
 
   std::thread run_thread_;
   std::atomic<bool> stop_{false};

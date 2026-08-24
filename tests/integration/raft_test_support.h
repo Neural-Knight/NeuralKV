@@ -94,6 +94,7 @@ inline ClientResult RunClient(const std::vector<std::string>& args) {
   if (pid == 0) {
     ::close(pipe_fds[0]);
     ::dup2(pipe_fds[1], STDOUT_FILENO);
+    ::dup2(pipe_fds[1], STDERR_FILENO);
     ::close(pipe_fds[1]);
 
     std::vector<char*> argv;
@@ -145,6 +146,7 @@ class RaftNodeProcess {
     if (pid_ == 0) {
       ::close(pipe_fds[0]);
       ::dup2(pipe_fds[1], STDOUT_FILENO);
+      ::dup2(pipe_fds[1], STDERR_FILENO);
       ::close(pipe_fds[1]);
 
       std::vector<const char*> argv = {NKV_SERVER_PATH,
