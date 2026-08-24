@@ -12,7 +12,9 @@ existing WAL. Follows the Raft consensus algorithm (Ongaro & Ousterhout,
   replication loop, and the RequestVote/AppendEntries handlers.
 - `raft::Log` (`src/raft/log.h`/`.cpp`) — the node's log, backed directly
   by its WAL (`persistence::WalWriter`). Not internally synchronized;
-  `RaftNode` serializes all access with its own mutex.
+  `RaftNode` serializes all access with its own mutex — so its writes
+  never actually contend with anything else for `WalWriter`'s group-commit
+  batching (see wal-design.md).
 - `raft::rpc_codec` — big-endian wire encoding for RequestVote/
   AppendEntries bodies, carried opaquely inside
   `protocol::ClusterRequest`/`ClusterResponse` (`MessageType::kClusterRequest`
@@ -86,8 +88,9 @@ applied on this node (bounded by a 3s timeout), so a client that gets
 
 `raft::Log` doesn't keep a separate log file — it *is* the WAL. Every
 `Log::Append` writes straight through `WalWriter::Append` (now carrying
-the entry's real Raft term, not the fixed 0 a single-node write used) and
-fsyncs before returning. `Log::TruncateFrom` handles the one thing an
+the entry's real Raft term, not the fixed 0 a single-node write used),
+then `Sync`s it durable before returning — the same group-commit path a
+single-node write uses. `Log::TruncateFrom` handles the one thing an
 append-only file can't do incrementally: dropping a conflicting suffix.
 It rebuilds the surviving prefix in memory and calls
 `WalWriter::RewriteAll`, which truncates the file to empty and rewrites
@@ -117,11 +120,14 @@ is already reflected locally — this node's own commit/apply path is
 synchronous, so `last_applied` never lags `commit_index` by the time a
 write's `Propose()` call returns.
 
-This is deliberately not the full `read_index` optimization (batching
-concurrent reads behind one confirmation round, or tracking "already
-confirmed this term" to skip the round entirely between heartbeats) —
-every GET pays one extra round trip to each peer. Correct, not fast;
-worth revisiting if read latency becomes the bottleneck.
+`ConfirmLeadershipQuorum()` skips that round trip entirely if a majority
+of peers already acked an AppendEntries (heartbeat or otherwise) within
+the last heartbeat interval (75ms) at the current term — tracked in
+`last_ack_time_`, cleared on every leadership/term change. This is still
+exactly as safe: a superseding leader would have needed to win an
+election inside that same window, which requires a round of
+vote-granting that would have reached this node and demoted it first.
+When contact isn't recent enough, GET falls back to the full round.
 
 `--allow-stale-reads` on `nkv-server` reverts to legacy stale-read mode:
 every GET, on any node, reads local storage immediately with no quorum
@@ -145,14 +151,13 @@ tracks — no separate bookkeeping, no HTTP endpoint yet:
 ## Known limitations
 
 - **No snapshots.** A restarted or far-behind node replays/receives the
-  *entire* log; there's no InstallSnapshot RPC to compact it. Deferred
-  from this pass — see "Snapshots: deferred" below.
+  *entire* log; there's no InstallSnapshot RPC to compact it. See
+  "Snapshots: deferred" below.
 - **Propose() blocks the calling thread**, including epoll's single event
   loop thread when running in `--io epoll` mode — the same tradeoff
-  DurableStorage's fsync already introduced for B5, just with a Raft
-  round trip layered on top of the fsync it still does. The new
-  `ConfirmLeadershipQuorum()` read path carries the identical tradeoff
-  for GET.
+  DurableStorage's fsync already introduces, just with a Raft round trip
+  layered on top of the fsync it still does. `ConfirmLeadershipQuorum()`
+  carries the identical tradeoff for GET when it can't skip its round trip.
 - **No connect/read timeouts in ClusterTransport.** Each RPC pays a fresh
   TCP handshake (no per-peer connection cache — see Components), and a
   hung (not dead) peer can still stall a replication round on the
@@ -180,7 +185,7 @@ from the leader — `raft_catchup_test.cpp` exercises exactly this path for
 100 entries and it's fast at that scale. The gap only matters once a
 log's on-disk size or a follower's catch-up distance gets large enough
 that full-log replay becomes the dominant cost. Planned trigger
-thresholds for the next pass: snapshot when the log exceeds ~10,000
+thresholds: snapshot when the log exceeds ~10,000
 entries or the WAL file exceeds ~64 MB, whichever comes first, mirroring
 `Log::TruncateFrom`'s existing full-file-rewrite approach (`WalWriter::
 RewriteAll`) but writing a compacted `ShardedKV` state dump instead of a

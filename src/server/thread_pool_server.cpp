@@ -28,10 +28,9 @@ ThreadPoolServer::ThreadPoolServer(std::string host, uint16_t port,
 
 void ThreadPoolServer::Stop() {
   stop_.store(true);
-  // Closing the listen socket reliably wakes a thread blocked in accept()
-  // on macOS, but not on Linux. Connecting to our own listener forces
-  // accept() to return with a real (if unused) connection, which Run()'s
-  // loop discards once it sees stop_ set.
+  // Closing the listen socket wakes an accept()-blocked thread on macOS but
+  // not Linux. Connecting to our own listener forces accept() to return with
+  // a real (if unused) connection, which Run()'s loop discards once stop_ is set.
   Result<int> wake_conn = net::TcpConnect(host_, port_);
   if (wake_conn.ok()) {
     net::CloseQuietly(wake_conn.value());

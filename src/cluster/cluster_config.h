@@ -24,18 +24,9 @@ struct ClusterConfig {
   const PeerInfo* FindPeer(uint32_t node_id) const;
 };
 
-// Parses a cluster config file:
-//
-//   node_id=1
-//   leader_id=1
-//   peer 1 127.0.0.1 7401
-//   peer 2 127.0.0.1 7402
-//   peer 3 127.0.0.1 7403
-//
-// Blank lines and lines starting with '#' are ignored. peers must list
-// every node in the cluster, including the local one. leader_id is
-// optional; when present it must name a peer in the list. Validates that
-// local_node_id names a peer in the list and that no peer id repeats.
+// Parses a cluster config file: node_id=N, optional leader_id=N, and one
+// "peer <id> <host> <port>" line per node (including local). Blank/'#'
+// lines are ignored; local_node_id must appear as a peer with no duplicate ids.
 Status LoadClusterConfig(const std::string& path, ClusterConfig& out);
 
 }  // namespace neuralkv::cluster

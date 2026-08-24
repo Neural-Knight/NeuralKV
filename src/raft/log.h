@@ -15,10 +15,9 @@ namespace neuralkv::raft {
 // synchronized — callers (RaftNode) serialize access with their own lock.
 class Log {
  public:
-  // wal_writer is borrowed from the owning DurableStorage; data_dir names
-  // the same directory, used for the read-only startup scan that populates
-  // the in-memory entries vector (WalWriter's own scan only tracks the
-  // highest index, not full entry contents).
+  // wal_writer is borrowed from the owning DurableStorage; data_dir names the
+  // same directory, used for the read-only startup scan that populates entries_
+  // (WalWriter's own scan only tracks the highest index, not full contents).
   Log(persistence::WalWriter& wal_writer, std::string data_dir);
 
   // Reads data_dir/wal/wal.log into the in-memory entries vector. Call once

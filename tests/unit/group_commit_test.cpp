@@ -86,10 +86,9 @@ TEST(GroupCommitTest, SequentialAppendsEachGetTheirOwnFsync) {
   TempDataDir dir;
   WalWriter writer(dir.path());
 
-  // No concurrency at all: each Append+Sync pair fully completes
-  // (including its own fsync) before the next one starts, so there's
-  // never anything else to batch with. Group commit shouldn't invent
-  // batching where none is possible.
+  // No concurrency: each Append+Sync fully completes (including fsync) before
+  // the next starts, so there's never anything to batch with. Group commit
+  // shouldn't invent batching where none is possible.
   for (int i = 0; i < 5; ++i) {
     Result<uint64_t> appended = writer.Append(SetRecord("k" + std::to_string(i), "v"));
     ASSERT_TRUE(appended.ok());
@@ -106,10 +105,9 @@ TEST(GroupCommitTest, SyncReturnsOnceOwnIndexIsDurableEvenIfLaterIndicesArrive) 
   Result<uint64_t> first = writer.Append(SetRecord("k1", "v1"));
   ASSERT_TRUE(first.ok());
 
-  // A second append arrives before the first's Sync() call — by the
-  // time Sync(first) actually flushes, it should cover both, and
-  // Sync(first) must not need to wait for a third append that hasn't
-  // happened yet.
+  // A second append arrives before the first's Sync() call — by the time
+  // Sync(first) flushes, it should cover both, and must not wait for a
+  // third append that hasn't happened yet.
   Result<uint64_t> second = writer.Append(SetRecord("k2", "v2"));
   ASSERT_TRUE(second.ok());
 
@@ -129,10 +127,9 @@ TEST(GroupCommitTest, RecordCapFlushesWithoutWaitingOutTheFullDelay) {
     flushed.store(true);
   });
 
-  // Feed enough concurrent appends to hit the record cap quickly; the
-  // syncer's flush should complete well before the 1ms delay cap would
-  // force it to, since the cap is meant to be an upper bound, not a
-  // mandatory wait.
+  // Feed enough concurrent appends to hit the record cap quickly; the flush
+  // should complete well before the 1ms delay cap, since the cap is an upper
+  // bound, not a mandatory wait.
   for (int i = 1; i < kGroupCommitMaxRecords + 4; ++i) {
     writer.Append(SetRecord("k" + std::to_string(i), "v"));
   }

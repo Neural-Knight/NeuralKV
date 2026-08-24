@@ -1,5 +1,5 @@
-B11: WAL group commit, before vs. after. Same single-node write-heavy
-workload as b11-baseline-2026-08-24.txt, same Docker/Linux container,
+WAL group commit, before vs. after. Same single-node write-heavy
+workload as optimization-baseline-2026-08-24.txt, same Docker/Linux container,
 --io threadpool --workers 8 throughout.
 
 command (build): cmake -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -8,11 +8,11 @@ date: 2026-08-24
 
 --- write-heavy (ratio 20 = 20% GET / 80% SET), clients 8 ---
 
-before (no group commit — see b11-baseline-2026-08-24.txt):
+before (no group commit — see optimization-baseline-2026-08-24.txt):
   ops/sec: 4569.85   p50: 1848us   p95: 2677us   p99: 4294us
 
 after (group commit, N=16 records / 1ms delay cap, adaptive quiet-tick):
-command: nkv-bench --bench --host 127.0.0.1 --port 18850 --duration 30 --clients 8 --ratio 20 --label b11-group-commit-single-write20
+command: nkv-bench --bench --host 127.0.0.1 --port 18850 --duration 30 --clients 8 --ratio 20 --label group-commit-single-write20
   total ops: 412883
   ops/sec:   13762.5
   p50 (us):  675

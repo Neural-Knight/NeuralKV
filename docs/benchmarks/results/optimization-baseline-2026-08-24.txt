@@ -1,5 +1,5 @@
-B11 baseline: single-node vs. 3-node Raft leader, before any optimization
-work in this pass. Docker (Ubuntu 24.04 container, Linux target build),
+Baseline profile: single-node vs. 3-node Raft leader, before the
+optimization work below. Docker (Ubuntu 24.04 container, Linux target build),
 --io threadpool --workers 8, --clients 8 throughout unless noted.
 
 command (build): cmake -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -7,8 +7,8 @@ command (build): cmake -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
 date: 2026-08-24
 
 --- single-node, write-heavy (ratio 20 = 20% GET / 80% SET) ---
-command: nkv-server --io threadpool --workers 8 --port 18820 --data-dir /tmp/b11_single
-command: nkv-bench --bench --host 127.0.0.1 --port 18820 --duration 30 --clients 8 --ratio 20 --label b11-baseline-single-write20
+command: nkv-server --io threadpool --workers 8 --port 18820 --data-dir /tmp/nkv-baseline-single
+command: nkv-bench --bench --host 127.0.0.1 --port 18820 --duration 30 --clients 8 --ratio 20 --label baseline-single-write20
 total ops: 137104
 ops/sec:   4569.85
 p50 (us):  1848
@@ -16,7 +16,7 @@ p95 (us):  2677
 p99 (us):  4294
 
 --- single-node, read-only (ratio 100) ---
-command: nkv-bench --bench --host 127.0.0.1 --port 18821 --duration 15 --clients 8 --ratio 100 --label b11-baseline-single-read100
+command: nkv-bench --bench --host 127.0.0.1 --port 18821 --duration 15 --clients 8 --ratio 100 --label baseline-single-read100
 total ops: 2981299
 ops/sec:   198751
 p50 (us):  27
@@ -26,7 +26,7 @@ p99 (us):  126
 --- 3-node Raft cluster, leader, write-heavy (ratio 20) ---
 node config: 3 nodes, threadpool 8 workers each, ports 18831-18833
 leader discovery: probed all three with `nkv-client set leader-probe x` until one returned OK (node 1 this run)
-command: nkv-bench --bench --host 127.0.0.1 --port 18831 --duration 30 --clients 8 --ratio 20 --label b11-baseline-raft-write20
+command: nkv-bench --bench --host 127.0.0.1 --port 18831 --duration 30 --clients 8 --ratio 20 --label baseline-raft-write20
 total ops: 66298
 ops/sec:   2209.81
 p50 (us):  3015
@@ -34,7 +34,7 @@ p95 (us):  6012
 p99 (us):  7557
 
 --- 3-node Raft cluster, leader, read-only (ratio 100) ---
-command: nkv-bench --bench --host 127.0.0.1 --port 18831 --duration 15 --clients 8 --ratio 100 --label b11-baseline-raft-read100
+command: nkv-bench --bench --host 127.0.0.1 --port 18831 --duration 15 --clients 8 --ratio 100 --label baseline-raft-read100
 total ops: 181535
 ops/sec:   12102.1
 p50 (us):  248
@@ -75,10 +75,10 @@ clients=32: ops/sec 2485.42, p50 1835us, p95 3859us,  p99 4470us
    leader a moment ago and nothing requires re-proving that on every
    single read.
 
-Both are addressed in this pass: group commit (B) for #1, quorum-check
-amortization (C) for #2. See docs/performance-notes.md for the full
-writeup and docs/benchmarks/results/b11-group-commit-2026-08-24.txt /
-b11-read-confirm-2026-08-24.txt for before/after numbers.
+Both are addressed below: group commit for #1, quorum-check amortization
+for #2. See docs/performance-notes.md for the full writeup and
+docs/benchmarks/results/group-commit-2026-08-24.txt /
+read-confirm-amortization-2026-08-24.txt for before/after numbers.
 
 --- methodology note ---
 No sampling profiler (perf, etc.) is available in this container without

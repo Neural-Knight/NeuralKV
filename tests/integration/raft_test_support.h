@@ -1,11 +1,8 @@
 #pragma once
 
-// Shared subprocess-cluster helpers for the Raft integration tests: fork
-// real nkv-server processes on fixed ports with generated cluster config
-// files, talk to them with the wire protocol directly, and drive
-// nkv-client for redirect tests. Requires NKV_SERVER_PATH and
-// NKV_CLIENT_PATH to be defined by the including test binary's build
-// target.
+// Shared subprocess-cluster helpers for the Raft integration tests: fork real
+// nkv-server processes with generated cluster configs and talk to them over
+// the wire protocol. Requires NKV_SERVER_PATH/NKV_CLIENT_PATH from the build target.
 
 #include <cstdint>
 #include <cstdio>
@@ -39,11 +36,9 @@ inline std::string WriteClusterConfig(const std::string& dir, uint32_t node_id,
   return path;
 }
 
-// A closed connection or malformed frame is surfaced as a real Status
-// error rather than a default-constructed (and therefore falsely
-// kOk-looking — ClientResponse::status defaults to kOk) response, so a
-// caller racing a request against a deliberate server kill can tell "no
-// answer arrived" apart from "the server actually said OK".
+// A closed connection or malformed frame surfaces as a real Status error
+// rather than a default kOk-looking response, so a caller racing a request
+// against a deliberate server kill can tell "no answer" apart from "server said OK".
 inline Result<protocol::ClientResponse> SendClientRequest(int fd, const protocol::ClientRequest& req) {
   std::vector<uint8_t> encoded;
   Status encode_status = protocol::EncodeClientRequest(req, encoded);
@@ -123,12 +118,9 @@ inline ClientResult RunClient(const std::vector<std::string>& args) {
   return result;
 }
 
-// Forks nkv-server as one Raft cluster node on a fixed port, against a
-// caller-owned data directory (so a test can Kill() and then construct a
-// fresh RaftNodeProcess pointed at the same directory to simulate a
-// restart with its on-disk state intact). extra_args lets a test add
-// flags (e.g. --allow-stale-reads) beyond the standard --port/--node-id/
-// --cluster-config/--data-dir set.
+// Forks nkv-server as one Raft cluster node on a fixed port, against a caller-
+// owned data directory — Kill() then a fresh RaftNodeProcess on the same dir
+// simulates a restart with on-disk state intact. extra_args adds flags beyond --port/--node-id/--cluster-config/--data-dir.
 class RaftNodeProcess {
  public:
   RaftNodeProcess(uint32_t node_id, uint16_t port, const std::string& cluster_conf_path,

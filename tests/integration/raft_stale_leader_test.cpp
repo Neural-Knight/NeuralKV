@@ -66,10 +66,9 @@ class RaftStaleLeaderTest : public ::testing::Test {
   std::vector<std::unique_ptr<testutil::RaftNodeProcess>> nodes_;
 };
 
-// A leader stranded without a majority (its two followers killed) can
-// still believe it's the leader — nothing tells it otherwise — but it
-// must not be able to commit anything, since Propose() can never reach
-// AdvanceCommitIndexLocked's majority threshold with zero live peers.
+// A leader stranded without a majority (followers killed) can still believe
+// it's leader, but must not be able to commit anything — Propose() can never
+// reach AdvanceCommitIndexLocked's majority threshold with zero live peers.
 TEST_F(RaftStaleLeaderTest, MinorityLeaderCannotCommitWrites) {
   const int leader = FindLeaderAndSet(nodes_, "seed", "value", std::chrono::milliseconds(2000));
   ASSERT_GE(leader, 0) << "no leader accepted a write";
@@ -86,10 +85,9 @@ TEST_F(RaftStaleLeaderTest, MinorityLeaderCannotCommitWrites) {
       protocol::ClientRequest{
           .request_id = 2, .opcode = protocol::Opcode::kSet, .key = "orphaned", .value = "x"});
 
-  // Propose() times out after 3s (see raft/node.cpp kProposeTimeout) and
-  // surfaces as an internal error rather than an OK — either the
-  // connection-level round trip fails outright or it succeeds but the
-  // response is not kOk. Never kOk.
+  // Propose() times out after 3s (see kProposeTimeout in node.cpp) and surfaces
+  // as an internal error rather than OK — either the round trip fails outright
+  // or succeeds with a non-kOk response. Never kOk.
   if (resp.ok()) {
     EXPECT_NE(resp.value().status, protocol::ResponseStatus::kOk);
   }

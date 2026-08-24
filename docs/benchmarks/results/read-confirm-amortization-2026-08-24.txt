@@ -1,14 +1,14 @@
-B11: read-confirm amortization (ConfirmLeadershipQuorum), before vs.
+Read-confirm amortization (ConfirmLeadershipQuorum), before vs.
 after. Docker/Linux, 3-node Raft cluster, --io threadpool --workers 8,
 --clients 8 throughout, writing against the elected leader.
 
-"Before" here means: group commit (Part B) already applied to both
-runs, read-confirm amortization specifically disabled for the "before"
+"Before" here means: group commit already applied to both runs,
+read-confirm amortization specifically disabled for the "before"
 run only (the `if (HasRecentMajorityContactLocked()) return true;`
 short-circuit in RaftNode::ConfirmLeadershipQuorum forced off) — an
 apples-to-apples isolation of just this one change, not a comparison
-against an earlier milestone's numbers. b11-baseline-2026-08-24.txt's
-raft-read100 number (12,102 ops/sec) is the true pre-M11 baseline and
+against an earlier baseline's numbers. optimization-baseline-2026-08-24.txt's
+raft-read100 number (12,102 ops/sec) is the true baseline and
 lines up with this file's "before" read100 number (12,365.9 ops/sec)
 within normal run-to-run variance, confirming group commit alone
 doesn't move the read path at all — expected, since it only touches
@@ -21,7 +21,7 @@ date: 2026-08-24
 --- read-only (ratio 100) — the clean, unconfounded signal ---
 
 before (amortization disabled):
-command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 15 --clients 8 --ratio 100 --label b11-before-read-confirm-raft-read100
+command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 15 --clients 8 --ratio 100 --label before-read-confirm-raft-read100
   total ops: 185520
   ops/sec:   12365.9
   p50 (us):  245
@@ -29,7 +29,7 @@ command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 15 --clie
   p99 (us):  4068
 
 after (amortization enabled):
-command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 15 --clients 8 --ratio 100 --label b11-read-confirm-raft-read100
+command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 15 --clients 8 --ratio 100 --label read-confirm-raft-read100
   total ops: 4531346
   ops/sec:   151044
   p50 (us):  44
@@ -39,13 +39,13 @@ command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 15 --clie
 delta: 12.2x throughput, p50 5.6x lower, p95 25.1x lower, p99 29.1x
 lower. A GET on the Raft leader now costs roughly what a single-node
 GET costs (single-node read-only baseline: 198,751 ops/sec, p50=27us —
-see b11-baseline-2026-08-24.txt) instead of paying a full network round
+see optimization-baseline-2026-08-24.txt) instead of paying a full network round
 trip to both followers on every single call.
 
 --- 80/20 mix (ratio 80) — the standard workload ---
 
 before (amortization disabled):
-command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 30 --clients 8 --ratio 80 --label b11-before-read-confirm-raft-8020
+command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 30 --clients 8 --ratio 80 --label before-read-confirm-raft-8020
   total ops: 167108
   ops/sec:   5570.08
   p50 (us):  1297
@@ -53,7 +53,7 @@ command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 30 --clie
   p99 (us):  3160
 
 after (amortization enabled):
-command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 30 --clients 8 --ratio 80 --label b11-read-confirm-raft-8020
+command: nkv-bench --bench --host 127.0.0.1 --port <leader> --duration 30 --clients 8 --ratio 80 --label read-confirm-raft-8020
   total ops: 256336
   ops/sec:   8543.83
   p50 (us):  63

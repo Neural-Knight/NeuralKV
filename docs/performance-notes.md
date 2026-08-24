@@ -2,9 +2,8 @@
 
 Profile-driven optimization pass on top of the working, correct Raft
 implementation and its failure-testing suite. Every claim below is
-backed by a benchmark run recorded under `docs/benchmarks/results/`
-(see the `b11-*` files) — nothing here is asserted without a number next
-to it.
+backed by a benchmark run recorded under `docs/benchmarks/results/` —
+nothing here is asserted without a number next to it.
 
 ## Methodology
 
@@ -13,8 +12,8 @@ container without elevated privileges it doesn't grant by default, so
 bottleneck identification is via targeted comparative benchmarking:
 change exactly one variable, hold everything else constant, and read
 the delta off real `nkv-bench` runs. See
-`docs/benchmarks/results/b11-baseline-2026-08-24.txt` for the full raw
-numbers behind the two findings below.
+`docs/benchmarks/results/optimization-baseline-2026-08-24.txt` for the
+full raw numbers behind the two findings below.
 
 ## Bottleneck 1: WAL append+fsync+apply is fully serialized
 
@@ -42,7 +41,7 @@ ago; re-proving that on every read is avoidable.
 
 ## Optimizations applied
 
-### Group commit (Part B) — addresses Bottleneck 1
+### Group commit — fixes Bottleneck 1
 
 Batches concurrent WAL appends into one `fsync` instead of one per
 write, bounded by either a record-count cap (16) or a latency cap (1ms)
@@ -60,7 +59,7 @@ regression: the fully uncontended, single-client case gets ~55% slower
 (233us -> 364us p50) — the standard group-commit trade-off of a small
 bounded tax when there's nothing to batch with, in exchange for a large
 win the moment there's real concurrent load. See
-`docs/benchmarks/results/b11-group-commit-2026-08-24.txt` for the full
+`docs/benchmarks/results/group-commit-2026-08-24.txt` for the full
 numbers.
 
 Two things had to be solved carefully to get this right, both caught by
@@ -96,7 +95,7 @@ the existing test suite (not shipped and then discovered):
   rather than always sleeping out the full cap — bounded the same way,
   but no longer pointless for Raft's single-writer-per-node case.
 
-### Read-confirm amortization (Part C) — addresses Bottleneck 2
+### Read-confirm amortization — fixes Bottleneck 2
 
 `RaftNode` tracks, per peer, the last time it acked *any* AppendEntries
 (heartbeat or otherwise) in the current term (`last_ack_time_`, cleared
@@ -121,28 +120,28 @@ smoothing) the tail, the tail now falls entirely on the write share's
 own replication latency, which amortization doesn't touch — a real,
 disclosed trade-off, not a regression in what actually matters for this
 workload (median latency and overall throughput). See
-`docs/benchmarks/results/b11-read-confirm-2026-08-24.txt` for the full
-numbers and how the "before" run was isolated.
+`docs/benchmarks/results/read-confirm-amortization-2026-08-24.txt` for
+the full numbers and how the "before" run was isolated.
 
-### Connection reuse in ClusterTransport (Part D)
+### Connection reuse in ClusterTransport
 
 See "Rejected / deferred" below.
 
 ## Rejected / deferred
 
-- **Per-RPC TCP connect reuse (Part D).** Not implemented. Once Part C
-  lands, the dominant per-GET cost it was meant to address (a full
-  round trip on every read) mostly disappears — a confirmed leader
-  skips the RPC round entirely rather than just skipping its connect
-  overhead. What's left is the ordinary heartbeat traffic every 75ms,
-  which already pays one connect per peer per heartbeat regardless of
-  reuse; reusing a persistent connection here reintroduces the exact
-  BlockingServer connection-starvation bug fixed during the Raft
-  milestone (a held-open connection under continuous heartbeat traffic
-  monopolizes a single-threaded server's one serving slot) unless
-  paired with non-trivial safeguards this pass doesn't need. Revisit if
-  a future profile shows heartbeat connect overhead is itself
-  significant once read-path savings are accounted for.
-- **Snapshots, multi-Raft sharding, io_uring** — out of scope for this
-  pass; see raft-design.md for snapshots specifically (still deferred
-  from the Raft milestone, unrelated to this one).
+- **Per-RPC TCP connect reuse.** Not implemented. Once read-confirm
+  amortization lands, the dominant per-GET cost it was meant to address
+  (a full round trip on every read) mostly disappears — a confirmed
+  leader skips the RPC round entirely rather than just skipping its
+  connect overhead. What's left is the ordinary heartbeat traffic every
+  75ms, which already pays one connect per peer per heartbeat regardless
+  of reuse; reusing a persistent connection here reintroduces the exact
+  BlockingServer connection-starvation bug fixed earlier in the project
+  (a held-open connection under continuous heartbeat traffic monopolizes
+  a single-threaded server's one serving slot) unless paired with
+  non-trivial safeguards not currently needed. Revisit if a future
+  profile shows heartbeat connect overhead is itself significant once
+  read-path savings are accounted for.
+- **Snapshots, multi-Raft sharding, io_uring** — out of scope here; see
+  raft-design.md for snapshots specifically (still deferred, unrelated
+  to this optimization work).

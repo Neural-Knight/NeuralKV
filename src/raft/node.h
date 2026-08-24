@@ -18,18 +18,9 @@
 
 namespace neuralkv::raft {
 
-// One node's Raft state machine: leader election, log replication, and
-// commit/apply, per the Ongaro thesis. Owns a background thread that runs
-// the election timer (follower/candidate) and the heartbeat/replication
-// loop (leader). RequestVote/AppendEntries handlers are called synchronously
-// from whichever thread is serving that inbound cluster RPC, so all state
-// access goes through mutex_.
-//
-// propose() blocks the calling client-handler thread until its entry is
-// committed and applied (or it times out, or leadership is lost) — cheap
-// with a threadpool of workers, but note it also blocks the single epoll
-// event-loop thread if that's the server's --io mode, the same tradeoff
-// DurableStorage's fsync already carries there.
+// One node's Raft state machine: leader election, log replication, and commit/
+// apply, per the Ongaro thesis. A background thread runs elections and heartbeats;
+// RPC handlers run on whichever thread serves them, so all state access goes through mutex_.
 class RaftNode {
  public:
   RaftNode(uint32_t local_node_id, const cluster::ClusterConfig& config,
@@ -46,22 +37,14 @@ class RaftNode {
   void Start();
   void Stop();
 
-  // Leader-only: appends entry to the local log, replicates it, and blocks
-  // until it's committed and applied to storage. Returns an error with
-  // ErrorCode::kInvalidArgument if this node isn't the leader (including
-  // losing leadership while the call was in flight) — callers map that
-  // specifically to a client-facing WRONG_LEADER, distinct from any other
-  // failure.
+  // Leader-only: appends entry, replicates it, and blocks until committed and
+  // applied. Returns kInvalidArgument if this node isn't the leader (including
+  // losing leadership mid-call) — callers map that to a client-facing WRONG_LEADER.
   Status Propose(LogEntry entry);
 
-  // read_index-style linearizable-read check: sends one round of empty
-  // AppendEntries to every peer and returns true only if a majority
-  // (including this node) confirms the same current term. A true result
-  // means no other leader has been elected since this round started, so
-  // this node's local state already reflects every entry any client could
-  // have observed as committed. Returns false (and may step down) if this
-  // node isn't leader, loses leadership mid-check, or can't reach a
-  // majority — callers should treat false as "not safe to read here".
+  // read_index-style linearizable-read check: one round of empty AppendEntries to
+  // every peer, true only if a majority (including self) confirms the same current
+  // term — meaning no other leader has been elected since. False means not safe to read here.
   bool ConfirmLeadershipQuorum();
 
   RaftState state() const;
@@ -75,10 +58,9 @@ class RaftNode {
   // synchronously with whatever just advanced commit_index.
   uint64_t lag_entries() const;
 
-  // Leader's last log index minus peer_id's matchIndex — how far behind
-  // that follower's replicated log is, from this node's point of view.
-  // 0 if peer_id is this node itself, or if this node isn't leader (a
-  // follower/candidate has no matchIndex tracking for anyone).
+  // Leader's last log index minus peer_id's matchIndex — how far behind that
+  // follower is. 0 if peer_id is this node, or if this node isn't leader
+  // (no matchIndex tracking without leadership).
   uint64_t replication_lag_entries(uint32_t peer_id) const;
 
   RequestVoteResponse HandleRequestVote(const RequestVoteRequest& req);
@@ -117,12 +99,9 @@ class RaftNode {
   std::chrono::steady_clock::time_point next_heartbeat_;
   std::unordered_map<uint32_t, uint64_t> next_index_;
   std::unordered_map<uint32_t, uint64_t> match_index_;
-  // Last time each peer acked any AppendEntries (heartbeat or otherwise)
-  // in the current term — cleared on every leadership/term change, so a
-  // stale entry can never survive across one. Read-confirm amortization
-  // (ConfirmLeadershipQuorum) uses this to skip its own round trip when
-  // ordinary heartbeats already established live majority contact
-  // recently enough.
+  // Last time each peer acked AppendEntries in the current term — cleared on
+  // every leadership/term change. ConfirmLeadershipQuorum uses this to skip its
+  // own round trip when heartbeats already established recent majority contact.
   std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> last_ack_time_;
 
   std::thread run_thread_;

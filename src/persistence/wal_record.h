@@ -26,17 +26,9 @@ struct WalRecord {
 // big-endian and the crc covering everything after itself.
 void EncodeWalRecord(const WalRecord& record, std::vector<uint8_t>& out);
 
-// Reads one record starting at the current offset of fd.
-//
-// - Ok() with *has_record == true: a complete, CRC-valid record was read;
-//   fd's offset now sits at the start of the next one.
-// - Ok() with *has_record == false: fewer bytes remain than a full record
-//   needs. This is the expected shape of a crash mid-write (the last
-//   write() before a crash lands partially); callers should treat it as
-//   the end of the log, not an error.
-// - error: a record was fully present but its CRC, op, or field lengths
-//   don't check out — real corruption rather than a truncated write, so
-//   callers should refuse to proceed rather than guess at the data.
+// Reads one record at fd's current offset. Ok()+has_record=true: valid record
+// read, offset advanced. Ok()+has_record=false: a truncated tail (crash mid-write) —
+// treat as end of log, not an error. Error: CRC/field mismatch — real corruption, stop.
 Status ReadNextWalRecord(int fd, WalRecord* record, bool* has_record);
 
 }  // namespace neuralkv::persistence

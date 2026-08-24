@@ -2,10 +2,11 @@
 
 Durability for NeuralKV: every SET/DELETE is appended to a log and
 fsync'd before it's applied to memory, so an acknowledged write survives
-a crash. No snapshots, no group commit. `term` in the record format is
-what lets this same on-disk log double as Raft's replicated log (see
-raft-design.md's WAL integration section) without a separate format for
-single-node vs. clustered mode.
+a crash. No snapshots yet; concurrent writers' fsyncs are batched (group
+commit — see below). `term` in the record format is what lets this same
+on-disk log double as Raft's replicated log (see raft-design.md's WAL
+integration section) without a separate format for single-node vs.
+clustered mode.
 
 ## Record format
 
@@ -30,8 +31,10 @@ All multi-byte integers are big-endian. The CRC covers term through value
 `DurableStorage::Set`/`Delete`:
 
 1. Append the record to the WAL (buffered, not yet durable).
-2. `fsync` the WAL file.
-3. Apply the mutation to the in-memory `ShardedKV`.
+2. `Sync` the WAL up to that record's index — see Group commit below.
+3. Apply the mutation to the in-memory `ShardedKV`, gated by a small
+   apply-order barrier so applies land in the same order as WAL indices
+   even when step 2 completes out of order across concurrent callers.
 
 If step 2 fails, step 3 never runs and the error goes back to the client
 — an unacknowledged write is allowed to be missing after a crash, but an
@@ -39,10 +42,19 @@ acknowledged one is not. GET bypasses the log entirely and reads straight
 from memory, since recovery has already replayed everything the log
 fsync'd by the time a server accepts connections.
 
-All three steps run under one mutex in `DurableStorage`, so writes are
-fully serialized regardless of how many server threads or connections are
-in flight — see the B5 benchmark note in the README for what that costs
-under concurrency.
+## Group commit
+
+`WalWriter::Sync` batches concurrent callers into as few real `fsync`
+calls as possible instead of one per caller: it waits for more pending
+appends up to a record cap (16) or a latency cap (1ms), whichever comes
+first, then fsyncs everything accumulated in one call. No caller waits
+longer than the latency cap for its own durability. The wait polls in
+short ticks and flushes early once nothing new arrives, so an
+uncontended write — Raft's own per-node log, already serialized by
+`RaftNode`'s mutex — only pays a small bounded delay rather than the
+full cap. See the write path under fsync in
+docs/benchmark-methodology.md for what this costs and saves under
+concurrency.
 
 ## Recovery
 
@@ -83,11 +95,11 @@ of the file, immediately before the next successful append. If a node
 crashes mid-write, restarts, and appends more records without anything
 else touching the file, that assumption holds: `WalWriter` opens in
 `O_APPEND` mode and writes always land after the existing bytes,
-truncated tail included. There is no compaction or repair tool in this
-milestone to fix a WAL that ends up with garbage anywhere other than at
-the true end of the file — that class of corruption is deliberately out
-of scope for a single-node stage and would surface as a fatal CRC error
-on the next restart rather than being silently repaired.
+truncated tail included. There is no compaction or repair tool to fix a
+WAL that ends up with garbage anywhere other than at the true end of the
+file — that class of corruption is deliberately out of scope and would
+surface as a fatal CRC error on the next restart rather than being
+silently repaired.
 
 ## SET requires a non-empty value
 

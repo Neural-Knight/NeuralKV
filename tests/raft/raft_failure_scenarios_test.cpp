@@ -48,10 +48,9 @@ class TempDir {
   std::string path_;
 };
 
-// 3-node in-process cluster wired with FaultInjectingTransport on every
-// node and all three registered with one FaultInjectionController, so a
-// scenario can isolate a node from the rest (or from one specific peer)
-// with a single call instead of managing per-transport state by hand.
+// 3-node in-process cluster wired with FaultInjectingTransport on every node,
+// all registered with one FaultInjectionController, so a scenario can isolate
+// a node from the rest (or one peer) with a single call.
 class FailureTestCluster {
  public:
   explicit FailureTestCluster(std::vector<uint16_t> ports) {
@@ -195,14 +194,9 @@ TEST(RaftFailureScenariosTest, MajorityPartitionContinues) {
   ASSERT_TRUE(cluster.ProposeOn(static_cast<std::size_t>(leader), SetEntry("k1", "v1")).ok());
   ASSERT_TRUE(cluster.WaitForAppliedIndex(static_cast<std::size_t>(leader), 1, std::chrono::milliseconds(2000)));
 
-  // The isolated follower can never reach a majority of votes with both
-  // peers unreachable, so it can't be a commit source for anything
-  // while cut off — Propose() on it must fail, and it must never reach
-  // kLeader. It *will* legitimately become a candidate once its own
-  // election timeout fires (that's expected — nothing tells it it's
-  // isolated), possibly cycling through repeated candidacies, so its
-  // exact state at any one instant isn't itself the invariant worth
-  // checking.
+  // The isolated follower can't reach a majority with both peers unreachable,
+  // so Propose() on it must fail and it must never reach kLeader. It will
+  // legitimately become a candidate once its own election timeout fires — that's expected, not the invariant being checked.
   const Status propose_on_isolated = cluster.ProposeOn(follower, SetEntry("k2", "v2"));
   EXPECT_FALSE(propose_on_isolated.ok());
   EXPECT_NE(cluster.Raft(follower).state(), RaftState::kLeader);
@@ -271,10 +265,9 @@ TEST(RaftFailureScenariosTest, LeaderFailoverDuringWrites) {
     }
   });
 
-  // Let a chunk of writes land, then kill whichever node is currently
-  // leader (it may not be initial_leader if an election already
-  // happened by coincidence — either way, killing whoever holds it now
-  // is the scenario).
+  // Let a chunk of writes land, then kill whichever node is currently leader
+  // (may not be initial_leader if an election already happened by coincidence) —
+  // killing whoever holds it now is the scenario.
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   int leader_to_kill = cluster.CurrentLeader();
   while (leader_to_kill < 0) {
@@ -300,14 +293,9 @@ TEST(RaftFailureScenariosTest, LeaderFailoverDuringWrites) {
   }
   ASSERT_GE(new_leader, 0) << "no new leader elected after killing the leader mid-burst";
 
-  // A new leader can't directly advance commit_index_ over entries from
-  // a *previous* term just because a majority already has them (Raft's
-  // §5.4.2 safety rule — see raft-design.md's Commit and apply
-  // section); it only does so indirectly, once it commits a fresh entry
-  // in its own current term. Propose one now so every earlier entry
-  // still sitting in the log (possibly including the tail of this
-  // burst, if the old leader died before a post-commit heartbeat ever
-  // reached this node) actually gets applied before checking anything.
+  // A new leader can't advance commit_index_ over previous-term entries until
+  // it commits something in its own current term (Raft §5.4.2 safety rule).
+  // Propose a flush entry so any earlier entries still pending actually get applied before checking anything.
   ASSERT_TRUE(cluster.ProposeOn(static_cast<std::size_t>(new_leader), SetEntry("flush", "flush")).ok());
 
   int ok_count = 0;

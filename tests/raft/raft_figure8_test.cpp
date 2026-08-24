@@ -48,12 +48,9 @@ class TempDir {
   std::string path_;
 };
 
-// A small in-process 3-node cluster: each "node" is exactly what
-// nkv-server wires together (DurableStorage + ClusterTransport + RaftNode +
-// BlockingServer), just constructed directly in this process on loopback
-// ports instead of forked as a subprocess. This exercises real RaftNode
-// RPC handling and real replication timing without needing the nkv-server
-// binary or the client protocol at all.
+// A small in-process 3-node cluster: each "node" is exactly what nkv-server
+// wires together (DurableStorage + ClusterTransport + RaftNode + BlockingServer),
+// constructed directly on loopback ports instead of forked as a subprocess.
 class TestCluster {
  public:
   explicit TestCluster(std::vector<uint16_t> ports) {

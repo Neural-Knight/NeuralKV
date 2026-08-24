@@ -9,12 +9,9 @@
 namespace neuralkv::testing {
 namespace {
 
-// No real server needs to be listening for these: the gating logic (drop,
-// delay, partition, clear) runs and short-circuits before any real
-// connection attempt matters. When a case does fall through to the real
-// transport, the connect to this unused port fails fast (connection
-// refused) — checked only for the absence of the fault-injection error
-// text, not for success.
+// No real server needs to be listening: fault-injection gating (drop, delay,
+// partition, clear) short-circuits before any connection attempt matters. Where
+// it does fall through, the connect fails fast and is checked only for the fault-injection error text.
 cluster::PeerInfo PeerAt(uint32_t node_id) {
   return cluster::PeerInfo{.node_id = node_id, .host = "127.0.0.1", .port = 18999};
 }

@@ -89,10 +89,9 @@ Status WalWriter::OpenOrCreate() {
                           std::string("open ") + wal_path_ + ": " + std::strerror(errno));
   }
 
-  // Scan the existing log once to learn the highest index already
-  // written, so new appends continue the sequence. Recovery does the
-  // authoritative replay into the KV separately; this pass only needs
-  // the index.
+  // Scans the existing log once to learn the highest index already written,
+  // so new appends continue the sequence. Recovery does the authoritative
+  // replay into the KV separately — this only needs the index.
   if (::lseek(fd_, 0, SEEK_SET) < 0) {
     return Status::Error(ErrorCode::kIOError,
                           std::string("lseek ") + wal_path_ + ": " + std::strerror(errno));
@@ -166,15 +165,9 @@ Status WalWriter::Sync(uint64_t at_least_index) {
     // mid-flush); fall through and become the leader for our own index.
   }
 
-  // We're the batch leader: wait for more concurrent appends to arrive,
-  // up to the record cap or the delay cap, then fsync everything
-  // that's accumulated in one call. The wait is adaptive rather than a
-  // flat sleep to the delay cap: it polls in short quiet-ticks and
-  // stops as soon as nothing new has arrived for a full tick, so a
-  // solo, uncontended Append+Sync (the common case for Raft's own
-  // per-node log, which is already fully serialized by RaftNode's own
-  // mutex and so never actually has anything to batch with) pays a
-  // small bounded delay instead of always waiting out the full cap.
+  // We're the batch leader: wait for more appends up to the record or delay
+  // cap, then fsync everything accumulated in one call. The wait polls in
+  // short quiet-ticks and stops early once nothing new arrives, so an uncontended Append+Sync pays only a small bounded delay instead of the full cap.
   flush_in_progress_ = true;
   const auto deadline = std::chrono::steady_clock::now() + kGroupCommitMaxDelay;
   uint64_t observed_index = last_index_;

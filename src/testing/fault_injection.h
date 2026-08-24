@@ -1,11 +1,8 @@
 #pragma once
 
-// Test-only fault injection for Raft's cluster transport. Not linked into
-// any production binary — only into test targets that explicitly include
-// it. In-process only: this simulates faults by intercepting SendRpc calls
-// inside this process, not by touching iptables or network namespaces. A
-// full harness (scripted fault schedules, message reordering) is out of
-// scope; this is enough to test drop, delay, and partition-heal behavior.
+// Test-only fault injection for Raft's cluster transport (not linked into
+// production). Simulates faults in-process by intercepting SendRpc calls,
+// not via iptables/network namespaces — enough to test drop, delay, and partition-heal behavior.
 
 #include <chrono>
 #include <mutex>
@@ -20,14 +17,9 @@
 
 namespace neuralkv::testing {
 
-// A ClusterTransport that can drop, delay, or probabilistically drop
-// outbound RPCs to specific peers on command, standing in for RaftNode's
-// real transport in a test. Each node under test gets its own instance —
-// each one only controls its own outbound side, so a true bidirectional
-// partition needs both sides' instances touched (see
-// FaultInjectionController::partition below). Thread-safe: RaftNode can
-// call SendRpc from its background loop and from a request-handler
-// thread's Propose() concurrently.
+// A ClusterTransport that can drop, delay, or probabilistically drop RPCs to
+// specific peers on command. Each node gets its own instance controlling only
+// its outbound side — a bidirectional partition needs both sides touched (see FaultInjectionController::partition).
 class FaultInjectingTransport : public cluster::ClusterTransport {
  public:
   using cluster::ClusterTransport::ClusterTransport;
@@ -102,10 +94,9 @@ class FaultInjectingTransport : public cluster::ClusterTransport {
   std::uniform_real_distribution<double> dist_{0.0, 1.0};
 };
 
-// Coordinates fault injection across a set of per-node transports keyed
-// by node id. Each FaultInjectingTransport only controls its own outbound
-// side, so simulating a partition between two specific nodes means
-// touching both sides — this wraps that into one call.
+// Coordinates fault injection across per-node transports keyed by node id.
+// Each transport only controls its own outbound side, so simulating a
+// partition between two nodes means touching both — this wraps that into one call.
 class FaultInjectionController {
  public:
   void Register(uint32_t node_id, FaultInjectingTransport& transport) {

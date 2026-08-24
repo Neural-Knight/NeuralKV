@@ -22,10 +22,9 @@ namespace {
 
 using testutil::TempDataDir;
 
-// Forks nkv-server against a given --data-dir and an ephemeral port,
-// parsing the port it reports on stdout. Unlike the other integration
-// tests' TestServer, this one exposes Crash() so a test can SIGKILL the
-// server mid-test and later fork a fresh instance over the same data_dir.
+// Forks nkv-server against a given --data-dir and ephemeral port, parsing the
+// port from stdout. Unlike other integration tests' TestServer, this exposes
+// Crash() so a test can SIGKILL it and later fork a fresh instance over the same data_dir.
 class ManagedServer {
  public:
   explicit ManagedServer(const std::string& data_dir) {

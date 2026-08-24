@@ -73,10 +73,9 @@ protocol::ClientResponse RequestHandler::Handle(const protocol::ClientRequest& r
     }
     case protocol::Opcode::kGet: {
       if (raft_ != nullptr && !allow_stale_reads_) {
-        // Linearizable read: a follower has nothing locally guaranteed to
-        // be current, and a leader must first confirm it still holds a
-        // live quorum in its current term (read_index-style) before its
-        // own local state is safe to serve.
+        // Linearizable read: a follower has nothing locally guaranteed current, so
+        // the leader must confirm it still holds a live quorum (read_index-style)
+        // before serving from local state.
         if (!IsLeader() || !raft_->ConfirmLeadershipQuorum()) {
           resp.status = protocol::ResponseStatus::kWrongLeader;
           resp.leader_hint = raft_->leader_id();

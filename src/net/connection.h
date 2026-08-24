@@ -9,20 +9,18 @@
 
 namespace neuralkv::net {
 
-// Non-blocking per-connection state machine for edge-triggered event
-// loops: OnReadable/OnWritable drain exactly what the socket has ready
-// and buffer the rest, since a single edge-triggered notification won't
-// fire again until more data arrives.
+// Non-blocking per-connection state machine for edge-triggered event loops:
+// OnReadable/OnWritable drain what's ready and buffer the rest, since one
+// edge-triggered notification won't fire again until more data arrives.
 class Connection {
  public:
   explicit Connection(int fd);
 
   int fd() const { return fd_; }
 
-  // Drains available input, dispatching every complete request to
-  // handler and queuing its encoded response. Returns an error only for
-  // a genuine I/O failure (EOF and EAGAIN are not errors); check closed()
-  // for both cases.
+  // Drains available input, dispatching each complete request to handler and
+  // queuing its response. Returns an error only for a genuine I/O failure
+  // (EOF/EAGAIN aren't errors) — check closed() for both cases.
   Status OnReadable(RequestHandler& handler);
 
   // Flushes as much of the queued output as the socket accepts.

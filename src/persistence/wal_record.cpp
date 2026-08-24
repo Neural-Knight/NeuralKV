@@ -12,10 +12,9 @@ namespace {
 
 // crc(4) + term(8) + index(8) + op(1) + key_len(4)
 constexpr std::size_t kFixedHeaderSize = 25;
-// Sanity bound on a single field's declared length: garbage decoded from a
-// corrupt record can claim an arbitrary 32-bit length, and without a cap a
-// read of that "length" from a short file could look like a clean
-// truncated tail instead of the corruption it is.
+// Sanity bound on a field's declared length: a corrupt record can claim an
+// arbitrary 32-bit length, and without a cap that could look like a clean
+// truncated tail instead of the corruption it actually is.
 constexpr uint32_t kMaxFieldSize = 64u * 1024 * 1024;
 
 void WriteU32BE(std::vector<uint8_t>& out, uint32_t value) {

@@ -65,12 +65,9 @@ class RaftCatchupTest : public ::testing::Test {
   std::vector<std::unique_ptr<testutil::RaftNodeProcess>> nodes_;
 };
 
-// A follower that misses a batch of writes while stopped must replay them
-// all from the leader's log after it rejoins — no entry lost, no entry
-// applied out of order. The restarted follower runs with
-// --allow-stale-reads so its own local catch-up is directly observable
-// over GET; a normal (linearizable) follower would just answer
-// WRONG_LEADER regardless of how caught up it actually is.
+// A follower that misses writes while stopped must replay them all from the
+// leader's log on rejoin, in order. It runs with --allow-stale-reads so its
+// own catch-up is directly observable over GET (a normal follower would just answer WRONG_LEADER).
 TEST_F(RaftCatchupTest, FollowerCatchesUpAfterRestart) {
   const int leader = FindLeaderAndSet(nodes_, "seed", "seed-value", std::chrono::milliseconds(2000));
   ASSERT_GE(leader, 0) << "no leader accepted a write";

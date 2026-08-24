@@ -46,10 +46,9 @@ class TempDir {
   std::string path_;
 };
 
-// Counts every outbound RPC without altering behavior — plain
-// pass-through to the real transport. Lets a test tell "did
-// ConfirmLeadershipQuorum skip its round trip" apart from "did it run
-// one" without needing to inspect RaftNode's private state.
+// Counts every outbound RPC without altering behavior — plain pass-through to
+// the real transport. Lets a test tell "skipped its round trip" apart from "ran
+// one" without inspecting RaftNode's private state.
 class CountingTransport : public cluster::ClusterTransport {
  public:
   using cluster::ClusterTransport::ClusterTransport;
@@ -147,23 +146,14 @@ TEST(RaftReadOptimizationTest, SkipsQuorumRoundTripAfterRecentHeartbeats) {
   const int leader = cluster.WaitForLeader(std::chrono::milliseconds(2000));
   ASSERT_GE(leader, 0);
 
-  // Prime the amortization cache with one explicit round rather than
-  // sleeping and hoping a background heartbeat landed in that window —
-  // under enough unrelated system load (e.g. deep into a long full-suite
-  // run) a fixed sleep isn't a reliable proxy for "a heartbeat definitely
-  // got through by now". This call's own round trip establishes fresh
-  // contact directly.
+  // Prime the amortization cache with one explicit round instead of sleeping
+  // and hoping a background heartbeat landed — under full-suite load a fixed
+  // sleep isn't reliable. This call's own round trip establishes fresh contact.
   ASSERT_TRUE(cluster.Raft(static_cast<std::size_t>(leader)).ConfirmLeadershipQuorum());
 
-  // A single before/after bracket around one call races the leader's
-  // own background heartbeat loop (which shares the same transport and
-  // call counter): an unlucky heartbeat tick landing inside the bracket
-  // adds 2 calls that have nothing to do with this check. Looping many
-  // confirmations in quick succession, immediately after the priming
-  // call above, makes the signal robust to that: at most one or two
-  // heartbeats can plausibly land inside the whole loop, but if
-  // amortization weren't working, every one of these calls would add
-  // its own round trip (2 calls each).
+  // A single before/after bracket races the leader's own background heartbeat
+  // loop, which shares this counter. Looping many confirmations right after the
+  // priming call makes the signal robust: at most one or two heartbeats can land in the loop, but a broken amortization would add one per call.
   constexpr int kChecks = 50;
   const int calls_before = cluster.Transport(static_cast<std::size_t>(leader)).call_count.load();
   for (int i = 0; i < kChecks; ++i) {

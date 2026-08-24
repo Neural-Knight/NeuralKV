@@ -14,12 +14,9 @@
 
 namespace neuralkv::persistence {
 
-// Append-only writer for data_dir/wal/wal.log. Thread-safe: multiple
-// callers can Append and Sync concurrently — Append just writes bytes
-// and assigns an index; Sync batches concurrent callers into as few
-// real fsync calls as possible (group commit) while still fsync'ing
-// before returning to each one. Move-only: owns the file descriptor
-// directly and closes it on destruction.
+// Append-only writer for data_dir/wal/wal.log. Thread-safe: Append just writes
+// bytes and assigns an index; Sync batches concurrent callers into as few real
+// fsyncs as possible (group commit) while still fsync'ing before returning to each.
 class WalWriter {
  public:
   explicit WalWriter(std::string data_dir);
@@ -30,28 +27,19 @@ class WalWriter {
   WalWriter(WalWriter&& other) noexcept;
   WalWriter& operator=(WalWriter&& other) noexcept;
 
-  // Assigns record.index = ++last_index() and appends it to the log,
-  // returning the assigned index. record.term is written as given
-  // (callers outside Raft leave it 0). Does not fsync; call
-  // Sync(assigned_index) to make the append durable. Safe to call
-  // concurrently from multiple threads.
+  // Assigns record.index = ++last_index() and appends it, returning the
+  // assigned index. Does not fsync — call Sync(assigned_index) to make it
+  // durable. Safe to call concurrently from multiple threads.
   Result<uint64_t> Append(WalRecord record);
 
-  // Blocks until every record up to and including at_least_index has
-  // been fsync'd. Concurrent callers are batched into one real fsync
-  // where possible — group commit, bounded by kGroupCommitMaxRecords
-  // pending appends or kGroupCommitMaxDelay elapsed, whichever comes
-  // first, so no caller waits longer than kGroupCommitMaxDelay for its
-  // own durability.
+  // Blocks until every record up to at_least_index is fsync'd. Concurrent
+  // callers are batched into one real fsync where possible (group commit),
+  // bounded by kGroupCommitMaxRecords or kGroupCommitMaxDelay, whichever comes first.
   Status Sync(uint64_t at_least_index);
 
-  // Replaces the entire log with records, in order, fsync'd
-  // immediately (bypasses group-commit batching — this is an exclusive,
-  // rare operation, not a hot path). Used for Raft log conflict
-  // resolution (truncate-and-reappend), where an arbitrary suffix of
-  // previously-written entries needs to disappear — something an
-  // append-only file can't do incrementally. last_index() becomes
-  // records.back().index, or 0 if records is empty.
+  // Replaces the entire log with records, in order, fsync'd immediately —
+  // bypasses group-commit batching since this is a rare, exclusive operation.
+  // Used for Raft log conflict resolution; last_index() becomes records.back().index, or 0 if empty.
   Status RewriteAll(const std::vector<WalRecord>& records);
 
   uint64_t last_index() const;
@@ -87,10 +75,9 @@ class WalWriter {
 inline constexpr int kGroupCommitMaxRecords = 16;
 inline constexpr std::chrono::milliseconds kGroupCommitMaxDelay{1};
 
-// The batch leader polls in ticks this short rather than sleeping
-// straight to kGroupCommitMaxDelay, so it can flush as soon as a tick
-// goes by with no new arrivals instead of always waiting out the full
-// cap when there's nothing to batch with.
+// The batch leader polls in short ticks rather than sleeping to the full delay
+// cap, so it can flush as soon as a tick passes with no new arrivals instead
+// of always waiting out the cap when there's nothing to batch with.
 inline constexpr std::chrono::microseconds kGroupCommitQuietTick{50};
 
 }  // namespace neuralkv::persistence

@@ -1,4 +1,4 @@
-B9: failover recovery time on a 3-node Raft cluster.
+Failover recovery time on a 3-node Raft cluster.
 Docker (Ubuntu 24.04 container, Linux target build). Idle cluster (no
 write load running) — each run starts a fresh 3-node cluster, finds the
 elected leader, SIGKILLs it, and measures wall-clock time from the kill

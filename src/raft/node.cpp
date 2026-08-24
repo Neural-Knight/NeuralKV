@@ -371,10 +371,9 @@ bool RaftNode::ConfirmLeadershipQuorum() {
       leader_commit = commit_index_;
     }
 
-    // Deliberately empty entries: this round exists to prove quorum
-    // reachability at the current term, not to replicate — a concurrent
-    // heartbeat or Propose() call handles actual replication and updates
-    // next_index_/match_index_ on its own.
+    // Deliberately empty entries: this round only proves quorum reachability
+    // at the current term — a concurrent heartbeat or Propose() handles actual
+    // replication and updates next_index_/match_index_ on its own.
     const AppendEntriesRequest req{.term = term,
                                     .leader_id = local_node_id_,
                                     .prev_log_index = prev_log_index,

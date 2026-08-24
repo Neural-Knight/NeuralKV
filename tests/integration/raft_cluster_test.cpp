@@ -42,10 +42,9 @@ class RaftClusterTest : public ::testing::Test {
     for (const std::string& path : conf_paths_) ::unlink(path.c_str());
   }
 
-  // Repeatedly probes every live node with a SET until one accepts it
-  // (i.e. is the current leader), or the deadline passes. The generous
-  // deadline accounts for this test's own fork/exec/connect overhead on
-  // top of Raft's sub-second election timeout.
+  // Probes every live node with a SET until one accepts it (the current leader),
+  // or the deadline passes. The generous deadline covers this test's own
+  // fork/exec/connect overhead on top of Raft's sub-second election timeout.
   int FindLeaderAndSet(const std::string& key, const std::string& value,
                         std::chrono::milliseconds deadline) {
     const auto until = std::chrono::steady_clock::now() + deadline;
@@ -77,10 +76,9 @@ TEST_F(RaftClusterTest, LeaderWriteReplicatesToFollowers) {
   for (std::size_t i = 0; i < nodes_.size(); ++i) {
     if (static_cast<int>(i) == leader) continue;
 
-    // GET on a follower is WRONG_LEADER by default (linearizable reads —
-    // see raft_linearizable_read_test.cpp); nkv-client's --cluster-config
-    // redirect follows that to the leader, which serves the value once
-    // replication has caught up.
+    // GET on a follower is WRONG_LEADER by default (linearizable reads);
+    // nkv-client's --cluster-config redirect follows that to the leader,
+    // which serves the value once replication has caught up.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
     bool caught_up = false;
     while (std::chrono::steady_clock::now() < deadline) {

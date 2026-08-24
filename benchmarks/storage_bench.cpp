@@ -1,6 +1,6 @@
-// B0 storage-ceiling benchmark (see docs/benchmark-methodology.md): measures
+// Storage-ceiling benchmark (see docs/benchmark-methodology.md): measures
 // ShardedKV throughput with no network or disk I/O involved, establishing
-// the upper bound later stages are compared against.
+// the upper bound every other benchmark is compared against.
 
 #include <benchmark/benchmark.h>
 

@@ -10,23 +10,9 @@
 
 namespace neuralkv::cluster {
 
-// Node-to-node RPC over the same framed TCP protocol client connections
-// use, distinguished by MessageType (kClusterRequest/kClusterResponse).
-//
-// SendRpc dials a fresh connection per call and closes it immediately
-// after reading the response — deliberately not caching/reusing one per
-// peer. Raft's heartbeats are continuous (every ~75ms as long as a node is
-// leader); a cached, held-open connection would permanently occupy the
-// receiving end's one serving slot under BlockingServer's one-connection-
-// at-a-time model, starving every client request to that node. A fresh
-// connection per RPC costs a TCP handshake each time but keeps every
-// node's server free between calls, and lets independent RPCs to
-// different peers run fully concurrently instead of serializing behind a
-// shared cache lock.
-//
-// GetOrConnect/CloseAll are kept for a caller that wants to manage a
-// connection's lifetime itself across multiple calls; SendRpc doesn't use
-// either.
+// Node-to-node RPC over the framed TCP protocol (kClusterRequest/kClusterResponse).
+// SendRpc dials a fresh connection per call rather than caching one: a held-open
+// connection would occupy BlockingServer's single serving slot under continuous heartbeat traffic, starving client requests.
 class ClusterTransport {
  public:
   explicit ClusterTransport(uint32_t local_node_id);
@@ -38,11 +24,9 @@ class ClusterTransport {
   // Returns the cached connection to peer, or dials a new one.
   Result<int> GetOrConnect(const PeerInfo& peer);
 
-  // Dials a fresh connection to peer, sends req, blocks for its response,
-  // and closes the connection before returning — success or failure.
-  // Virtual solely so tests can wrap it with fault injection (see
-  // src/testing/fault_injection.h); RaftNode always talks to a plain
-  // ClusterTransport in production.
+  // Dials a fresh connection to peer, sends req, blocks for the response, and
+  // closes it before returning (success or failure). Virtual only so tests can
+  // wrap it with fault injection; production always uses plain ClusterTransport.
   virtual Result<protocol::ClusterResponse> SendRpc(const PeerInfo& peer,
                                                       const protocol::ClusterRequest& req);
 

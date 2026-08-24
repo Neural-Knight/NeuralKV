@@ -1,12 +1,12 @@
 All runs: Docker (Ubuntu 24.04 container, Linux target build), WAL enabled
-(default since this change), --duration 30, --ratio 80 (default). Each
+(default), --duration 30, --ratio 80 (default). Each
 client pre-populates 1000 keys before the timed window; every SET is a
 full append+fsync+apply, so pre-populate cost is included in ops/sec below
 proportionally to how much of the run it consumed.
 
 --- run 1: epoll (single-threaded), 8 clients ---
-command: nkv-server --io epoll --port 7710 --data-dir /tmp/nkv-b5-epoll
-command: nkv-bench --bench --host 127.0.0.1 --port 7710 --duration 30 --clients 8 --label "B5 epoll+wal c8"
+command: nkv-server --io epoll --port 7710 --data-dir /tmp/nkv-wal-epoll
+command: nkv-bench --bench --host 127.0.0.1 --port 7710 --duration 30 --clients 8 --label "epoll+wal c8"
 date: 2026-08-23
 total ops: 304061
 ops/sec:   10135.2
@@ -15,8 +15,8 @@ p95 (us):  3412
 p99 (us):  4118
 
 --- run 2: thread-pool (8 workers), 8 clients (matched, no queuing distortion) ---
-command: nkv-server --io threadpool --workers 8 --port 7712 --data-dir /tmp/nkv-b5-tp8
-command: nkv-bench --bench --host 127.0.0.1 --port 7712 --duration 30 --clients 8 --label "B5 threadpool8+wal c8"
+command: nkv-server --io threadpool --workers 8 --port 7712 --data-dir /tmp/nkv-wal-tp8
+command: nkv-bench --bench --host 127.0.0.1 --port 7712 --duration 30 --clients 8 --label "threadpool8+wal c8"
 date: 2026-08-23
 total ops: 427916
 ops/sec:   14262.9
@@ -25,8 +25,8 @@ p95 (us):  3094
 p99 (us):  3826
 
 --- run 3: thread-pool (64 workers), 64 clients (matched) ---
-command: nkv-server --io threadpool --workers 64 --port 7713 --data-dir /tmp/nkv-b5-tp64
-command: nkv-bench --bench --host 127.0.0.1 --port 7713 --duration 30 --clients 64 --label "B5 threadpool64+wal c64"
+command: nkv-server --io threadpool --workers 64 --port 7713 --data-dir /tmp/nkv-wal-tp64
+command: nkv-bench --bench --host 127.0.0.1 --port 7713 --duration 30 --clients 64 --label "threadpool64+wal c64"
 date: 2026-08-23
 total ops: 274476
 ops/sec:   9144.62

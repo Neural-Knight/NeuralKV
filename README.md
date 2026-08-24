@@ -1,8 +1,12 @@
 # NeuralKV
 
 NeuralKV is a distributed, in-memory key-value store built from scratch in
-C++20: custom binary TCP protocol, epoll-driven networking, write-ahead-log
-durability, and Raft-based replication across a 3-node cluster.
+C++20: a custom binary TCP protocol, three interchangeable server I/O models
+(blocking, thread-pool, epoll), write-ahead-log durability, and Raft-based
+replication across a 3-node cluster with linearizable reads. It's a from-
+scratch systems project meant to demonstrate the full stack of a real
+distributed store — networking, storage, consensus, and the failure testing
+and performance work that go with it — not a production database.
 
 ## Prerequisites
 
@@ -10,7 +14,7 @@ durability, and Raft-based replication across a 3-node cluster.
 - A C++20 compiler (Apple Clang, GCC, or Clang)
 - Docker (optional, for Linux builds from macOS)
 
-## Native Build (macOS / Linux)
+## Quick Start
 
 ```sh
 cmake -B build
@@ -18,130 +22,117 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Run the benchmark sanity check and the load generator's help text:
+The deployment target is Linux. `./scripts/docker_build.sh` runs the same
+build and test suite inside an Ubuntu container, for parity with target
+hardware when developing on macOS.
 
-```sh
-./build/benchmarks/noop_bench
-./build/tools/nkv-bench/nkv-bench --help
+## Architecture
+
+```mermaid
+flowchart TD
+    client[nkv-client / nkv-bench]
+    server[Server: blocking / thread-pool / epoll]
+    handler[RequestHandler]
+    raft[RaftNode]
+    wal[WalWriter]
+    kv[ShardedKV]
+
+    client --> server --> handler
+    handler -->|SET/DELETE, cluster mode| raft
+    handler -->|SET/DELETE, no cluster| wal
+    handler -->|GET: quorum check on leader, else direct| kv
+    raft -->|append + replicate| wal
+    raft -->|apply on commit| kv
+    wal --> kv
 ```
 
-## Docker Build (Linux target)
+- **Protocol** — framed binary messages; client requests and cluster RPC
+  share one port
+- **Server** — three interchangeable I/O models, same `RequestHandler`
+- **Raft** — election, replication, linearizable reads via quorum confirm
+- **Persistence** — write-ahead log with group commit, crash recovery
+- **Storage** — sharded, thread-safe in-memory map
 
-The deployment target is Linux; this runs the same build and test suite
-inside an Ubuntu container:
+More detail in [docs/architecture.md](docs/architecture.md).
+
+## Running a Single Node
 
 ```sh
-./scripts/docker_build.sh
+./build/tools/nkv-server/nkv-server --port 7400 --data-dir ./data/node-1 &
+./build/tools/nkv-client/nkv-client --port 7400 set hello world
+./build/tools/nkv-client/nkv-client --port 7400 get hello
+./build/tools/nkv-client/nkv-client --port 7400 delete hello
 ```
+
+`nkv-server` defaults to blocking I/O. `--io threadpool --workers 8` and
+(on Linux) `--io epoll` select the other two server models; all three speak
+the identical wire protocol. Every SET/DELETE is appended to a write-ahead
+log and `fsync`'d before it's acknowledged, so an acknowledged write
+survives a crash — see [docs/wal-design.md](docs/wal-design.md).
+
+## Running a 3-Node Cluster
+
+```sh
+./scripts/run_cluster.sh
+```
+
+Starts a 3-node Raft cluster on localhost with generated per-node config
+files. Raft elects the leader; writes against any other node come back
+`WRONG_LEADER` with the current leader's node id, and `nkv-client
+--cluster-config <path>` follows that redirect automatically. Reads are
+linearizable by default too — a follower's GET also comes back
+`WRONG_LEADER`, and the leader confirms it still holds a live quorum before
+answering (`--allow-stale-reads` opts back into serving GET from local
+storage unconditionally, at the cost of that guarantee). Killing the leader
+triggers a new election.
+
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit
+together, [docs/raft-design.md](docs/raft-design.md) for how election,
+replication, commit/apply, and linearizable reads work, and
+[docs/cluster-config.md](docs/cluster-config.md) for the config file format
+and client redirect behavior.
 
 ## Benchmarking
 
-Start a server, then point nkv-bench at it: `nkv-server --port 7400 &` then
-`nkv-bench --bench --host 127.0.0.1 --port 7400 --duration 30 --clients 16`.
-
-To compare the blocking baseline (B1) against the thread-pool server (B2),
-run the same nkv-bench command against each: `nkv-server --port 7400`
-(single-threaded) vs. `nkv-server --port 7400 --workers 8` (thread pool),
-then diff the throughput and percentiles nkv-bench prints for each run.
-
-B4 (epoll event loop) is Linux-only: `nkv-server --io epoll --port 7400`
-under Docker or on a Linux host. Compare it against B2 the same way — same
-nkv-bench command, `--workers 8` vs. `--io epoll` — and diff the printed
-throughput and percentiles. No numbers are published here; run it and read
-what your machine reports.
-
-B5 (write-ahead log) is on unconditionally as of this change — every SET
-and DELETE appends to the WAL and `fsync`s before it's applied, regardless
-of `--io` mode. To see the fsync cost, run the same nkv-bench command
-against a server from before this change and one after; the gap between
-them is B5's durability tax on top of B4. Because every write serializes
-through one `fsync` (`DurableStorage` holds a single lock around
-append+sync+apply), throughput does not scale with `--workers` or
-connection count the way B2/B4's read-heavy numbers did — use
-`--label b5-wal` to tag the run.
-
-B6 (3-node Raft) measures consensus overhead on top of B5: point
-nkv-bench at the elected leader of a Raft cluster (see below) instead of
-a single-node server, same command otherwise. Every SET now replicates
-to a majority before the client sees a response, so expect materially
-lower throughput and higher tail latency than a single node — see
-[docs/benchmarks/results/b6-raft-2026-08-23.txt](docs/benchmarks/results/b6-raft-2026-08-23.txt)
-for real numbers.
-
-B9 measures failover time instead of throughput: `SIGKILL` a running
-cluster's leader and time how long until a surviving node accepts a
-write. Median 289ms across 3 runs on Linux/Docker, comfortably inside
-Raft's randomized 250–400ms election timeout — see
-[docs/benchmarks/results/b9-failover-2026-08-24.txt](docs/benchmarks/results/b9-failover-2026-08-24.txt).
-
-B11 is a profile-driven optimization pass on top of B5/B6/B9: measuring
-found two real bottlenecks (the WAL's single fsync-per-write serializing
-every writer, and every Raft-leader GET paying a full quorum round trip)
-and fixed both. WAL group commit took single-node write-heavy throughput
-up 3.01x and turned the write path from "more concurrent clients doesn't
-help" into "actually scales with concurrency" (3.4x–3.65x at 8–32
-clients). Read-confirm amortization took Raft-leader read throughput up
-12.2x on a read-only workload and the standard 80/20 mix up 1.53x, with
-p50 down 20.6x, without weakening linearizability. See
-[docs/performance-notes.md](docs/performance-notes.md) for the
-methodology, what was measured, what was fixed, and one optimization
-(connection reuse) that was evaluated and deliberately not implemented,
-plus [docs/benchmarks/results](docs/benchmarks/results/) for every
-before/after number (`b11-*`).
-
-## Cluster (Raft-replicated)
-
-`./scripts/run_cluster.sh` starts a 3-node cluster on localhost. Raft
-elects the leader; writes against any other node come back as
-`WRONG_LEADER` with the current leader's node id, and `nkv-client
---cluster-config <path>` follows that redirect automatically. Reads are
-linearizable by default too: a follower's GET also comes back
-`WRONG_LEADER` (nothing local to serve with a currency guarantee), and
-the leader confirms it still holds a live quorum before answering —
-`--allow-stale-reads` opts back into serving GET from local storage
-unconditionally, at the cost of the currency guarantee. Killing the
-leader triggers a new election. See [docs/raft-design.md](docs/raft-design.md)
-for how election, replication, commit/apply, and linearizable reads work,
-and [docs/cluster-config.md](docs/cluster-config.md) for the config file
-format and client redirect behavior.
-
-## Failure testing
-
-`./scripts/run_fault_tests.sh` builds if needed and runs just the
-fault-injection and failure-scenario test suites (leader crash, network
-partition, delayed RPCs, concurrent clients across a leader change,
-single-key linearizability under load) instead of the full suite — see
-[docs/failure-testing.md](docs/failure-testing.md) for the failure model
-this covers, what's in scope (in-process fault injection via
-`src/testing/fault_injection.h`) and what isn't (no `iptables`/network
-namespaces, no scripted fault schedules, no full Jepsen-style checker).
-
-## Project Layout
-
+```sh
+./build/tools/nkv-bench/nkv-bench --bench --host 127.0.0.1 --port 7400 \
+    --duration 30 --clients 16
 ```
-src/common/       core types shared across the project (Status, Result<T>, NodeConfig)
-src/storage/      sharded, thread-safe in-memory key-value store (ShardedKV)
-src/protocol/     binary wire protocol: frame codec, request/response types
-src/net/          POSIX socket RAII, blocking I/O helpers, connection state
-                  machine, epoll event loop (Linux only)
-src/persistence/  write-ahead log, crash recovery, durable storage engine
-src/cluster/      cluster config, node-to-node RPC transport
-src/raft/         Raft consensus: election, log replication, commit/apply
-src/server/       request handler, blocking and thread-pool TCP servers
-src/testing/      test-only fault injection and a linearizability checker;
-                  never linked into nkv-server
-tests/unit/       GoogleTest unit tests
-tests/integration/ end-to-end tests against a forked nkv-server subprocess
-tests/raft/       in-process Raft tests (real RaftNode/BlockingServer
-                  objects, no subprocess)
-benchmarks/       Google Benchmark micro-benchmarks
-tools/nkv-server/ standalone server binary
-tools/nkv-client/ one-shot CLI client (set/get/delete)
-tools/nkv-bench/  load generator and latency benchmark
-docker/           Linux container build definition
-scripts/          helper scripts (Docker build/test, run_cluster.sh)
-docs/             design docs and benchmark methodology
+
+Point `nkv-bench` at a running server or Raft leader to measure throughput
+and latency percentiles. The project has been benchmarked in stages, each
+isolating one architectural change: a blocking-TCP baseline, thread pool and
+epoll I/O models, WAL durability, Raft replication, failover recovery, and
+two profile-driven optimizations (WAL group commit and read-quorum
+amortization). See [docs/benchmark-methodology.md](docs/benchmark-methodology.md)
+for the full stage-by-stage numbers and how each was measured, and
+[docs/benchmarks/results/](docs/benchmarks/results/) for the raw output
+behind every number.
+
+The two optimization passes are the highlights: batching concurrent WAL
+fsyncs into group commits took single-node write throughput up **3.01x**
+and turned the write path from "more concurrent clients doesn't help" into
+one that actually scales with concurrency; skipping a Raft leader's quorum
+round trip on reads that already have recent majority contact took
+read-only throughput up **12.2x** and the standard 80/20 mix up **1.53x**,
+without weakening linearizability. [docs/performance-notes.md](docs/performance-notes.md)
+covers the bottlenecks that were measured, what was fixed, and one
+optimization (connection reuse) that was evaluated and deliberately not
+implemented.
+
+## Failure Testing
+
+```sh
+./scripts/run_fault_tests.sh
 ```
+
+Builds if needed and runs just the fault-injection and failure-scenario
+suites — leader crash, network partition, delayed RPCs, concurrent clients
+across a leader change, and single-key linearizability under load — instead
+of the full test suite. See [docs/failure-testing.md](docs/failure-testing.md)
+for the failure model this covers and what's out of scope (no
+`iptables`/network namespaces, no scripted fault schedules, no full
+Jepsen-style checker).
 
 ## Platform Notes
 
