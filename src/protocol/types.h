@@ -70,4 +70,4 @@ enum class ParseResult {
   kError,     // malformed frame; the connection should be closed
 };
 
-}  // namespace neuralkv::protocol
+}   

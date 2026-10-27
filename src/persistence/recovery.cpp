@@ -46,4 +46,4 @@ Status RecoverFromWal(const std::string& data_dir, ShardedKV& kv, uint64_t* last
   return result;
 }
 
-}  // namespace neuralkv::persistence
+}   

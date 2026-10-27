@@ -180,7 +180,7 @@ void RunBenchmark(const BenchOptions& options) {
             << "p99 (us):  " << Percentile(all_latencies, 0.99) << "\n";
 }
 
-}  // namespace
+}   
 
 int main(int argc, char** argv) {
   BenchOptions options;

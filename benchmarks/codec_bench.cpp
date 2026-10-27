@@ -26,7 +26,7 @@ ClientRequest MakeSetRequest() {
   };
 }
 
-}  // namespace
+}   
 
 static void BM_EncodeRequest_Set(benchmark::State& state) {
   const ClientRequest req = MakeSetRequest();

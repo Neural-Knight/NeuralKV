@@ -28,4 +28,4 @@ class RequestHandler {
   bool allow_stale_reads_;
 };
 
-}  // namespace neuralkv
+}   

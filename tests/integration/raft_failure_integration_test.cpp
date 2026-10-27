@@ -172,5 +172,5 @@ TEST_F(RaftFailureIntegrationTest, ConcurrentClientsSurviveLeaderChange) {
       << "a client read back a value older than its own last confirmed write";
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

@@ -30,7 +30,7 @@ uint32_t WantedEvents(const Connection& conn) {
   return events;
 }
 
-}  // namespace
+}   
 
 EpollServer::EpollServer(std::string host, uint16_t port, persistence::DurableStorage& storage,
                           raft::RaftNode* raft, bool allow_stale_reads)
@@ -175,6 +175,6 @@ void EpollServer::RemoveConnection(int fd) {
   connections_.erase(fd);
 }
 
-}  // namespace neuralkv::net
+}   
 
 #endif  // NEURALKV_LINUX

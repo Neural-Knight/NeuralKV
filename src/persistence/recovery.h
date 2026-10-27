@@ -13,4 +13,4 @@ namespace neuralkv::persistence {
 // (crash mid-write) but errors on CRC/validation failure, since that's real corruption.
 Status RecoverFromWal(const std::string& data_dir, ShardedKV& kv, uint64_t* last_applied_index);
 
-}  // namespace neuralkv::persistence
+}   

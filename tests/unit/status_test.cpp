@@ -42,5 +42,5 @@ TEST(ResultTest, MoveOnlyValueIsPreserved) {
   EXPECT_EQ(moved, "payload");
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

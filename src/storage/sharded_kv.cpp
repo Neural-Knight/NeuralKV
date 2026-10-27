@@ -58,4 +58,4 @@ std::size_t ShardedKV::Size() const {
   return total;
 }
 
-}  // namespace neuralkv
+}   

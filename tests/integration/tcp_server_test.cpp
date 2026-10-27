@@ -175,5 +175,5 @@ TEST_F(TcpServerTest, MalformedFrameClosesConnection) {
   EXPECT_EQ(n, 0);
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

@@ -80,4 +80,4 @@ inline constexpr std::chrono::milliseconds kGroupCommitMaxDelay{1};
 // of always waiting out the cap when there's nothing to batch with.
 inline constexpr std::chrono::microseconds kGroupCommitQuietTick{50};
 
-}  // namespace neuralkv::persistence
+}   

@@ -403,5 +403,5 @@ TEST(ProtocolCodecTest, EncodeRejectsGetWithValue) {
   EXPECT_EQ(status.code(), ErrorCode::kInvalidArgument);
 }
 
-}  // namespace
-}  // namespace neuralkv::protocol
+}   
+}   

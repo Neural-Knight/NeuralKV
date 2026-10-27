@@ -192,5 +192,5 @@ TEST(RaftFaultInjectionTest, DelayedFollowerCatchesUpAfterPartitionHeals) {
   EXPECT_EQ(value.value(), "committed-without-victim");
 }
 
-}  // namespace
-}  // namespace neuralkv::raft
+}   
+}   

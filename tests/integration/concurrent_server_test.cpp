@@ -200,5 +200,5 @@ TEST(ConcurrentServerTest, ServerStartsWithWorkersFlag) {
   EXPECT_EQ(resp.status, protocol::ResponseStatus::kOk);
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

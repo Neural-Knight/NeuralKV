@@ -89,7 +89,7 @@ Status Validate(const ClusterConfig& config) {
   return Status::Ok();
 }
 
-}  // namespace
+}   
 
 const PeerInfo* ClusterConfig::FindPeer(uint32_t node_id) const {
   for (const PeerInfo& peer : peers) {
@@ -118,4 +118,4 @@ Status LoadClusterConfig(const std::string& path, ClusterConfig& out) {
   return Status::Ok();
 }
 
-}  // namespace neuralkv::cluster
+}   

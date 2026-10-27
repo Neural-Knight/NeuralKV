@@ -112,5 +112,5 @@ TEST_F(RaftLinearizableReadTest, ClientRedirectFollowsGetToLeader) {
   EXPECT_NE(redirected.stdout_output.find("v3"), std::string::npos);
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

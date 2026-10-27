@@ -153,5 +153,5 @@ TEST(ShardedKVTest, ConcurrentOperationsPreserveInvariants) {
   EXPECT_EQ(kv.Size(), static_cast<std::size_t>(kThreadCount * kOpsPerThread / 2));
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

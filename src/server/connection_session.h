@@ -9,4 +9,4 @@ namespace neuralkv {
 // handler, and writes back the encoded response. Does not close fd.
 void ServeClientSession(int client_fd, RequestHandler& handler);
 
-}  // namespace neuralkv
+}   

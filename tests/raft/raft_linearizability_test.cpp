@@ -241,5 +241,5 @@ TEST(RaftLinearizabilityTest, ThreeClientsSingleKeyFiveHundredOps) {
   EXPECT_TRUE(violation.empty()) << violation;
 }
 
-}  // namespace
-}  // namespace neuralkv::raft
+}   
+}   

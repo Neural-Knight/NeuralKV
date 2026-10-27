@@ -44,4 +44,4 @@ class Log {
   std::vector<LogEntry> entries_;  // entries_[i] holds index i+1
 };
 
-}  // namespace neuralkv::raft
+}   

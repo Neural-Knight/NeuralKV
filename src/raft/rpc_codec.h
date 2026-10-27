@@ -49,4 +49,4 @@ Status DecodeAppendEntriesRequest(const std::string& in, AppendEntriesRequest& o
 Status EncodeAppendEntriesResponse(const AppendEntriesResponse& resp, std::string& out);
 Status DecodeAppendEntriesResponse(const std::string& in, AppendEntriesResponse& out);
 
-}  // namespace neuralkv::raft
+}   

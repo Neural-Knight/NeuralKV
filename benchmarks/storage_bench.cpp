@@ -37,7 +37,7 @@ std::vector<std::string> MakeKeys(std::size_t count) {
 
 std::string MakeValue() { return std::string(kValueSize, 'v'); }
 
-}  // namespace
+}   
 
 static void BM_Set_Sequential(benchmark::State& state) {
   const std::vector<std::string> keys = MakeKeys(kNumKeys);

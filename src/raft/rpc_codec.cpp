@@ -84,7 +84,7 @@ class Reader {
   std::size_t offset_ = 0;
 };
 
-}  // namespace
+}   
 
 Status EncodeRequestVoteRequest(const RequestVoteRequest& req, std::string& out) {
   std::vector<uint8_t> buf;
@@ -203,4 +203,4 @@ Status DecodeAppendEntriesResponse(const std::string& in, AppendEntriesResponse&
   return Status::Ok();
 }
 
-}  // namespace neuralkv::raft
+}   

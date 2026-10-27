@@ -34,4 +34,4 @@ ParseResult TryParseFrame(std::vector<uint8_t>& buffer, ClientRequest* out_reque
 ParseResult TryParseFrame(std::vector<uint8_t>& buffer, ClientRequest* out_request,
                            ClientResponse* out_response);
 
-}  // namespace neuralkv::protocol
+}   

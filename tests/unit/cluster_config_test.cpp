@@ -145,5 +145,5 @@ bogus_key=5
   EXPECT_FALSE(LoadClusterConfig(file.path(), config).ok());
 }
 
-}  // namespace
-}  // namespace neuralkv::cluster
+}   
+}   

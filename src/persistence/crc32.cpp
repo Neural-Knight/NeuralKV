@@ -13,4 +13,4 @@ uint32_t Crc32(const uint8_t* data, std::size_t len) {
   return ~crc;
 }
 
-}  // namespace neuralkv::persistence
+}   

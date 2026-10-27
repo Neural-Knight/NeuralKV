@@ -129,5 +129,5 @@ TEST(FaultInjectionTest, PartitionIgnoresUnregisteredNodeIds) {
   EXPECT_NE(node1.SendRpc(PeerAt(99), Ping()).status().message().find("fault injection"), std::string::npos);
 }
 
-}  // namespace
-}  // namespace neuralkv::testing
+}   
+}   

@@ -26,7 +26,7 @@ protocol::ResponseStatus ToResponseStatus(ErrorCode code) {
   return protocol::ResponseStatus::kInternalError;
 }
 
-}  // namespace
+}   
 
 RequestHandler::RequestHandler(persistence::DurableStorage& storage, raft::RaftNode* raft,
                                 bool allow_stale_reads)
@@ -168,4 +168,4 @@ protocol::ClusterResponse RequestHandler::HandleCluster(const protocol::ClusterR
   return resp;
 }
 
-}  // namespace neuralkv
+}   

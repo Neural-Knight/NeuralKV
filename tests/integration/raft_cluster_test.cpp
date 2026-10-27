@@ -128,5 +128,5 @@ TEST_F(RaftClusterTest, NewLeaderElectedAfterLeaderCrash) {
   EXPECT_NE(new_leader, leader);
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

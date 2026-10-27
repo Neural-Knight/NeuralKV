@@ -110,5 +110,5 @@ TEST_F(RaftCatchupTest, FollowerCatchesUpAfterRestart) {
   EXPECT_TRUE(caught_up) << "restarted follower never caught up to the leader's last write";
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

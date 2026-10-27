@@ -144,7 +144,7 @@ TEST_F(EpollServerTest, MalformedFrameClosesConnection) {
   EXPECT_EQ(n, 0);
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   
 
 #endif  // NEURALKV_LINUX

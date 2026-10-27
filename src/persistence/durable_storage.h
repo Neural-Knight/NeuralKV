@@ -53,4 +53,4 @@ class DurableStorage {
   std::unique_ptr<std::condition_variable> apply_cv_ = std::make_unique<std::condition_variable>();
 };
 
-}  // namespace neuralkv::persistence
+}   

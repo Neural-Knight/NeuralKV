@@ -13,4 +13,4 @@ Status Status::Error(ErrorCode code, std::string message) {
   return Status(code, std::move(message));
 }
 
-}  // namespace neuralkv
+}   

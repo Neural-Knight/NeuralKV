@@ -47,7 +47,7 @@ Status TruncatedPayload() {
   return Status::Error(ErrorCode::kInvalidArgument, "truncated payload");
 }
 
-}  // namespace
+}   
 
 Status EncodeClientRequest(const ClientRequest& req, std::vector<uint8_t>& out) {
   if (req.key.empty()) {
@@ -411,4 +411,4 @@ ParseResult TryParseFrame(std::vector<uint8_t>& buffer, ClientRequest* out_reque
   return TryParseFrame(buffer, out_request, out_response, nullptr, nullptr, nullptr);
 }
 
-}  // namespace neuralkv::protocol
+}   

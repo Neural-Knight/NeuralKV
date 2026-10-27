@@ -29,4 +29,4 @@ struct ClusterConfig {
 // lines are ignored; local_node_id must appear as a peer with no duplicate ids.
 Status LoadClusterConfig(const std::string& path, ClusterConfig& out);
 
-}  // namespace neuralkv::cluster
+}   

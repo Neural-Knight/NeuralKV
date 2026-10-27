@@ -353,5 +353,5 @@ TEST(RaftFailureScenariosTest, RejoinAfterPartition) {
   EXPECT_EQ(last.value(), "v" + std::to_string(kWriteCount - 1));
 }
 
-}  // namespace
-}  // namespace neuralkv::raft
+}   
+}   

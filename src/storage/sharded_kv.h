@@ -38,4 +38,4 @@ class ShardedKV {
   std::array<Shard, kShardCount> shards_;
 };
 
-}  // namespace neuralkv
+}   

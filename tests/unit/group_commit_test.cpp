@@ -21,7 +21,7 @@ uint64_t TestOnlyFsyncCount(const WalWriter& writer) {
   std::lock_guard<std::mutex> lock(*writer.mutex_);
   return writer.fsync_count_;
 }
-}  // namespace neuralkv::persistence
+}   
 
 namespace neuralkv::persistence {
 namespace {
@@ -137,5 +137,5 @@ TEST(GroupCommitTest, RecordCapFlushesWithoutWaitingOutTheFullDelay) {
   EXPECT_TRUE(flushed.load());
 }
 
-}  // namespace
-}  // namespace neuralkv::persistence
+}   
+}   

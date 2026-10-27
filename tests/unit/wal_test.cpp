@@ -170,5 +170,5 @@ TEST(WalTest, RecoverDetectsCrcCorruption) {
   EXPECT_EQ(status.code(), ErrorCode::kIOError);
 }
 
-}  // namespace
-}  // namespace neuralkv::persistence
+}   
+}   

@@ -47,7 +47,7 @@ uint64_t ReadU64BE(const uint8_t* p) {
   return value;
 }
 
-}  // namespace
+}   
 
 RaftNode::RaftNode(uint32_t local_node_id, const cluster::ClusterConfig& config,
                     persistence::DurableStorage& storage, cluster::ClusterTransport& transport)
@@ -564,4 +564,4 @@ void RaftNode::RunLoop() {
   }
 }
 
-}  // namespace neuralkv::raft
+}   

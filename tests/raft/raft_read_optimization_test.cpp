@@ -191,5 +191,5 @@ TEST(RaftReadOptimizationTest, RunsFullRoundAfterHeartbeatsStopLanding) {
       << "a stale/failed heartbeat history should force a real quorum round trip";
 }
 
-}  // namespace
-}  // namespace neuralkv::raft
+}   
+}   

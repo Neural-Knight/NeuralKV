@@ -32,4 +32,4 @@ class Status {
   std::string message_;
 };
 
-}  // namespace neuralkv
+}   

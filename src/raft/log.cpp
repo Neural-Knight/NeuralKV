@@ -99,4 +99,4 @@ uint64_t Log::LastIndex() const { return entries_.empty() ? 0 : entries_.back().
 
 uint64_t Log::LastTerm() const { return entries_.empty() ? 0 : entries_.back().term; }
 
-}  // namespace neuralkv::raft
+}   

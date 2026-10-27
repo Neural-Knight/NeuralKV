@@ -390,5 +390,5 @@ TEST_F(SingleRaftNodeTest, StaleTermCandidateIsRejected) {
   EXPECT_EQ(resp.term, 5u);
 }
 
-}  // namespace
-}  // namespace neuralkv::raft
+}   
+}   

@@ -230,5 +230,5 @@ TEST_F(ClusterTransportTest, ClusterPingGetsPongOnSamePort) {
   EXPECT_EQ(resp.body, "pong");
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   

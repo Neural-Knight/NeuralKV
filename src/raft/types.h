@@ -27,4 +27,4 @@ struct PersistentState {
   uint32_t voted_for = 0;  // 0 = none
 };
 
-}  // namespace neuralkv::raft
+}   

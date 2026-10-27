@@ -10,4 +10,4 @@ namespace neuralkv::persistence {
 // fsync dominates append cost, so a table isn't worth the complexity.
 uint32_t Crc32(const uint8_t* data, std::size_t len);
 
-}  // namespace neuralkv::persistence
+}   

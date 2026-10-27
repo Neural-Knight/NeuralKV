@@ -109,4 +109,4 @@ class RaftNode {
   std::atomic<bool> started_{false};
 };
 
-}  // namespace neuralkv::raft
+}   

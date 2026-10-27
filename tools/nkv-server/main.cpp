@@ -64,7 +64,7 @@ void InstallShutdownHandlers() {
   sigaction(SIGTERM, &action, nullptr);
 }
 
-}  // namespace
+}   
 
 int main(int argc, char** argv) {
   neuralkv::NodeConfig config;

@@ -64,7 +64,7 @@ Status CorruptRecord(const char* why) {
   return Status::Error(ErrorCode::kIOError, std::string("wal record corrupt: ") + why);
 }
 
-}  // namespace
+}   
 
 void EncodeWalRecord(const WalRecord& record, std::vector<uint8_t>& out) {
   std::vector<uint8_t> body;
@@ -131,4 +131,4 @@ Status ReadNextWalRecord(int fd, WalRecord* record, bool* has_record) {
   return Status::Ok();
 }
 
-}  // namespace neuralkv::persistence
+}   

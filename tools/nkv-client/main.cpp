@@ -105,7 +105,7 @@ neuralkv::Result<ClientResponse> ConnectAndSend(const std::string& host, uint16_
   return SendRequest(fd.get(), req);
 }
 
-}  // namespace
+}   
 
 int main(int argc, char** argv) {
   std::string host = "127.0.0.1";

@@ -96,4 +96,4 @@ void DurableStorage::ApplyCommitted(const WalRecord& record) {
   last_applied_index_ = record.index;
 }
 
-}  // namespace neuralkv::persistence
+}   

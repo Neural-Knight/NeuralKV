@@ -12,4 +12,4 @@ struct NodeConfig {
   std::string data_dir = "./data";
 };
 
-}  // namespace neuralkv
+}   

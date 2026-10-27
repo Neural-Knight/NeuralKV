@@ -36,7 +36,7 @@ Status MakeDirectoryRecursive(const std::string& path) {
   return Status::Ok();
 }
 
-}  // namespace
+}   
 
 WalWriter::WalWriter(std::string data_dir) : data_dir_(std::move(data_dir)) {
   open_status_ = OpenOrCreate();
@@ -123,7 +123,7 @@ Status WriteAll(int fd, const std::vector<uint8_t>& bytes) {
   return Status::Ok();
 }
 
-}  // namespace
+}   
 
 Result<uint64_t> WalWriter::Append(WalRecord record) {
   std::lock_guard<std::mutex> lock(*mutex_);
@@ -222,4 +222,4 @@ uint64_t WalWriter::last_index() const {
   return last_index_;
 }
 
-}  // namespace neuralkv::persistence
+}   

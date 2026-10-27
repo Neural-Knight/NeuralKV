@@ -51,6 +51,6 @@ class EpollServer {
   std::unordered_map<int, std::unique_ptr<Connection>> connections_;
 };
 
-}  // namespace neuralkv::net
+}   
 
 #endif  // NEURALKV_LINUX

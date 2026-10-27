@@ -110,5 +110,5 @@ TEST(RaftRpcCodecTest, DecodeRejectsTrailingBytes) {
   EXPECT_FALSE(DecodeRequestVoteResponse(body, decoded).ok());
 }
 
-}  // namespace
-}  // namespace neuralkv::raft
+}   
+}   

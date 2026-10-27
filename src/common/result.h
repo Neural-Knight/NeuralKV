@@ -44,4 +44,4 @@ class Result {
   std::variant<T, Status> state_;
 };
 
-}  // namespace neuralkv
+}   

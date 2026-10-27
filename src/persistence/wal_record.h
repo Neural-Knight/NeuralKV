@@ -31,4 +31,4 @@ void EncodeWalRecord(const WalRecord& record, std::vector<uint8_t>& out);
 // treat as end of log, not an error. Error: CRC/field mismatch — real corruption, stop.
 Status ReadNextWalRecord(int fd, WalRecord* record, bool* has_record);
 
-}  // namespace neuralkv::persistence
+}   

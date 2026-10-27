@@ -102,5 +102,5 @@ TEST_F(RaftStaleLeaderTest, MinorityLeaderCannotCommitWrites) {
   }
 }
 
-}  // namespace
-}  // namespace neuralkv
+}   
+}   
